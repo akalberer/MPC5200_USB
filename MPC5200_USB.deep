@@ -1,0 +1,20 @@
+#deep-1
+
+meta {
+	version = "Fri Jun 19 18:13:32 CEST 2015";
+	description = "deep project file for MPC5200_USB";
+}
+
+project MPC5200_USB {
+	libpath = "D:\MME\Automatisierungsprojekt\SourceCode\ch.ntb.inf.deep.trglib";
+	boardtype = phyCoreMpc5200io;
+	ostype = ntbSTS;
+#	programmertype = ;
+
+#	enter names of rootclasses, e.g.
+#	rootclasses = "test.MyFirstTestClass","other.MySecondTestClass";
+	rootclasses = "ch.ntb.inf.deep.runtime.mpc5200.demo.USB_Demo";
+
+	imgfile = "D:\ftp\pub\kalberer\MPC5200_USB.bin";
+	imgformat = BIN;
+}
