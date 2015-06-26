@@ -4,6 +4,7 @@ import java.io.PrintStream;
 
 import ch.ntb.inf.deep.runtime.mpc5200.driver.UART3;
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.USB;
+import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.exceptions.UsbException;
 
 public class USB_Demo{
 	
@@ -20,6 +21,11 @@ public class USB_Demo{
 		System.out.println("USB Demo:");
 		
 		USB usb = new USB();
-		usb.init();
+		try{
+			usb.init();
+		}
+		catch(UsbException e){
+			e.printStackTrace();
+		}
 	}
 }
