@@ -12,25 +12,34 @@ public class USB extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	private static final int FSMPS = (0x7FFF & (6 * (FI - 210)/7));
 	private static final int OCR = 3;			
 	
-	private byte[] HCCA;
+	private static byte[] HCCA;
 	private static final int HCCA_SIZE = 256;
-	private byte[] testED;		//TODO has to be built in another way (possible to create more than one), just for test
+	private static int[] testED;		//TODO has to be built in another way (possible to create more than one), just for test
+	private static int[] testED_TD;		//TODO
+	private static int[] testED_TD_data; //TODO
 	
-	public USB(){
-		HCCA = new byte[HCCA_SIZE];
-		testED = new byte[16];
-	}
+	public static boolean inISR = false;
+//	public USB(){
+//		
+//	}
 	
 	public void action(){
 		//USB ISR
-		System.out.println("Interrupt received");
+		//prevent USB from generating Interrupt again before we are finished
+		US.PUT4(USBHCIDR, 0x80000000);
+		System.out.println("ISR");
+		inISR = true;
+		
+		//enable USB Interrupts again
 	}
 	
-	public void init() throws UsbException{
+	public static void init() throws UsbException{
 		//init CDM Fractional Divider Config Register (internal USB Clock 48 MHz)
-		US.PUT4(CDMFDCR, 0x04015555);
+		int val = US.GET4(CDMFDCR);
+		val |= 4015555;
+		US.PUT4(CDMFDCR,  val);
 		//init GPS port config register for USB support
-		int val = US.GET4(GPSPCR);
+		val = US.GET4(GPSPCR);
 		val |= 0x00001000;
 		val &= ~0x00002000;
 		US.PUT4(GPSPCR, val);
@@ -39,21 +48,27 @@ public class USB extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			//wrong HC revision
 			throw new UsbException("Wrong HC revision");
 		}
-		
+				 
 		// 2) allocate and init any Host Controller structures, including HCCA block
-				
+		testED[0] = 0x04000000;		// max 1024, Control Format -> F=0, speed full, direction from TD, endpoint 0, functino address 0
+		testED[1] = US.REF(testED_TD);	// TD Queue Tail pointer
+		testED[2] = US.REF(testED_TD);	// TD Queue Head pointer
+		testED[3] = 0x00000000;		// no next endpoint
+	    testED_TD[0] = 0x01E40000;	// buffer can be smaller (R=1), SETUP Packet, DelayInterrupt -> no Interrupt, DATA0, ErrorCount = 0 
+		testED_TD[1] = US.REF(testED_TD_data);
+		testED_TD[2] = 0x00000000;
+		testED_TD[3] = US.REF((testED_TD[3] + 0x3)); 		//last byte so + 3
+		US.PUT4(USBHCCHEDR, US.REF(testED));	//set ED for control transfer
+		
 		// 3) load driver, take control of host controller
 		val = US.GET4(USBHCCMDSR);					// set OwnershipChangeRequest
 		US.PUT4(USBHCCMDSR, (val|(1 << OCR)) );
 		
 		// 4) Set up HC registers and HC Communications Area
+		System.out.println("Addr HCCA: ");
+		System.out.println(US.REF(HCCA));
 		US.PUT4(USBHCHCCAR, US.REF(HCCA));			// set pointer to HCCA
-		// interrupt Routing bit is ignored from HC Control Register 
-		// -> routed to interrupt controller in SIU -> route from there to SMI, NORMAL interrupt
-		InterruptMpc5200io usbInt = new USB();
-		InterruptMpc5200io.install(usbInt, 6); // USB is peripheral number 6
-		US.PUT4(ICTLPIMR, US.GET4(ICTLPIMR) & ~0x02000000);	// accept interrupts from USB
-		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x0300) ); // activate Interrupt routing of HC (ignored by 5200), and RemoteWakeupConnected 
+		
 		// read and set frame interval
 		val = (US.GET4(USBHCFIR) & 0x3FFF);
 		if(val != FI){
@@ -63,11 +78,12 @@ public class USB extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		System.out.println("val:");
 		System.out.println(val);
 		US.PUT4(USBHCFIR, (val|FI) );	
+		US.PUT4(USBHCPSR, (int)(FI*9/10));						// config periodic start (0.9*FrameInterval)
 		US.PUT4(USBHCRHDRA, (US.GET4(USBHCRHDRA)| 0x00001200) ); // config PowerSwitchingMode, OverCurrentProtection
 		//USBHCRHDRB -> config removable device is reset value -> nothing to do
 		
 		//now wait minimum time specified in the USB Specification for assertion of reset -> how much!?
-		for(int i = 0; i < 10000; i++);
+		for(int i = 0; i < 100000; i++);
 		
 		//setup host controller
 		int saveFmInterval = US.GET4(USBHCFIR);
@@ -82,27 +98,39 @@ public class USB extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			System.out.println("not in suspend");
 			throw new UsbException(Integer.toHexString((US.GET4(USBHCCTRLR) & 0x000000C0 )));
 		}
+				
+		// enable port power status
+		US.PUT4(USBHCRHP1SR, (US.GET4(USBHCRHP1SR)| 0x00000100 ));
+		//port power enable -> set PES to 1
+//		US.PUT4(USBHCRHSR, (US.GET4(USBHCRHSR)| 0x00010000)); 
 		
-		US.PUT4(USBHCCHEDR, US.REF(testED));	//set ED for control
+		// -> routed to interrupt controller in SIU -> route from there to SMI, NORMAL interrupt
+		InterruptMpc5200io usbInt = new USB();
+		InterruptMpc5200io.install(usbInt, 6); // USB is peripheral number 6
+		US.PUT4(ICTLPIMR, US.GET4(ICTLPIMR) & ~0x02000000);	// accept interrupts from USB
+		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x0300) ); // activate Interrupt routing of HC (ignored by 5200), and RemoteWakeupConnected
+
+		// interrupt Routing bit is ignored from HC Control Register 
+		// TODO -> 5200 hangs up, if commented in!? 
+		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x00000100 ));
+		
 		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|0xC000007B));		// enable interrupts except SOF
-		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x014));		// CLE > Control List Enable
-		US.PUT4(USBHCPSR, (int)(0.9f*FI));
+		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x010));		// CLE > Control List Enable
 		
-		// 5) Begin sending SOF tokens on the USB		
-		// check for port status changed, but that's old
-		long cnt = 0;
-		while(true){
-			if( (US.GET4(USBHCCTRLR) & 0x000000C0 ) == 0x080){
-				System.out.println("Op");
-			}
-			
-			if(cnt > 10000000){
-				System.out.println(".");
-				cnt = 0;
-			}
-			cnt++;
-		}
+		// 5) Begin sending SOF tokens on the USB -> set HcControl to USB Operational
+		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) & ~0x00000040));
+		// HC begins sending SOF 1ms later
+		// enable SOF interrupts to test Interrupts with deep
+		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|0xC000007F));
+	
 		
+	}
+	
+	static{
+		HCCA = new byte[HCCA_SIZE];
+		testED = new int[4];
+		testED_TD = new int[4];
+		testED_TD_data = new int[64];
 	}
 	
 }
