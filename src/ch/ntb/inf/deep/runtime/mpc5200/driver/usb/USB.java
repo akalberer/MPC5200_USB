@@ -79,12 +79,12 @@ public class USB extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		System.out.println(val);
 		US.PUT4(USBHCFIR, (val|FI) );	
 		US.PUT4(USBHCPSR, (int)(FI*9/10));						// config periodic start (0.9*FrameInterval)
-		US.PUT4(USBHCRHDRA, (US.GET4(USBHCRHDRA)| 0x00001200) ); // config PowerSwitchingMode, OverCurrentProtection
-		//USBHCRHDRB -> config removable device is reset value -> nothing to do
 		
-		//now wait minimum time specified in the USB Specification for assertion of reset -> how much!?
-		for(int i = 0; i < 100000; i++);
-		
+		US.PUT4(USBHCRHDRA, (US.GET4(USBHCRHDRA)| 0x00001002) ); // config PowerSwitchingMode, OverCurrentProtection
+		US.PUT4(USBHCRHDRA, (US.GET4(USBHCRHDRA & ~0x00000300))); // Power switching supported, all ports powered at the same time
+		US.PUT4(USBHCRHDRB, 0x00000000);		//power switching global, devices removable
+		US.PUT4(USBHCRHSR, (US.GET4(USBHCRHSR) | 0x00010000)); 	//enable power on all ports
+				
 		//setup host controller
 		int saveFmInterval = US.GET4(USBHCFIR);
 		
@@ -100,9 +100,12 @@ public class USB extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		}
 				
 		// enable port power status
-		US.PUT4(USBHCRHP1SR, (US.GET4(USBHCRHP1SR)| 0x00000100 ));
+//		US.PUT4(USBHCRHP1SR, (US.GET4(USBHCRHP1SR)| 0x00000100 ));
 		//port power enable -> set PES to 1
 //		US.PUT4(USBHCRHSR, (US.GET4(USBHCRHSR)| 0x00010000)); 
+		//reset port 1
+//		US.PUT4(USBHCRHP1SR, (US.GET4(USBHCRHP1SR) | 0x00000010 ));
+//		for(int i = 0; i < 10000; i++);
 		
 		// -> routed to interrupt controller in SIU -> route from there to SMI, NORMAL interrupt
 		InterruptMpc5200io usbInt = new USB();
