@@ -36,19 +36,33 @@ public class USB extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	public static void init() throws UsbException{
 		//init CDM Fractional Divider Config Register (internal USB Clock 48 MHz)
 		int val = US.GET4(CDMFDCR);
-		val |= 4015555;
-		US.PUT4(CDMFDCR,  val);
+		if( (US.GET4(CDMPORCR) & 0x40) == 0x40 ){		// assumes 33Mhz clock
+			val |= 0x00010001;					// checkout 5200lite.c
+		}
+		else{
+			val |= 0x00015555;								
+		}
+		US.PUT4(CDMFDCR,  val);		// config ext_48mhz_en, fraction divider enable, divider counter
+		
 		//init GPS port config register for USB support
 		val = US.GET4(GPSPCR);
-		val |= 0x00001000;
-		val &= ~0x00002000;
+		val &= ~0x00800000;			// internal 48MHz USB Clock, pin is GPIO
+		val &= ~0x00007000;			// USB Differential mode
+		val |= 0x00001000;			// USB 1
 		US.PUT4(GPSPCR, val);
 		
 		if( (US.GET4(USBHCREVR)& 0xFF) != 0x10 ){		// 1) check HC revision (compliant to USB 1.1)
 			//wrong HC revision
 			throw new UsbException("Wrong HC revision");
 		}
-				 
+		
+		US.PUT4(USBHCRHDRA, (US.GET4(USBHCRHDRA & ~0x00000300))); 	// Power switching supported, all ports powered at the same time
+		US.PUT4(USBHCRHDRA, (US.GET4(USBHCRHDRA)| 0x00001002) ); 	// config PowerSwitchingMode, OverCurrentProtection
+		US.PUT4(USBHCRHDRB, 0x00000000);							// power switching global, devices removable
+		US.PUT4(USBHCRHSR, 0x00000001);								// turn off power
+		
+		US.PUT4(USBHCRHSR, (US.GET4(USBHCRHSR) | 0x00010000)); 		//enable power on all ports
+		
 		// 2) allocate and init any Host Controller structures, including HCCA block
 		testED[0] = 0x04000000;		// max 1024, Control Format -> F=0, speed full, direction from TD, endpoint 0, functino address 0
 		testED[1] = US.REF(testED_TD);	// TD Queue Tail pointer
@@ -80,10 +94,6 @@ public class USB extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		US.PUT4(USBHCFIR, (val|FI) );	
 		US.PUT4(USBHCPSR, (int)(FI*9/10));						// config periodic start (0.9*FrameInterval)
 		
-		US.PUT4(USBHCRHDRA, (US.GET4(USBHCRHDRA)| 0x00001002) ); // config PowerSwitchingMode, OverCurrentProtection
-		US.PUT4(USBHCRHDRA, (US.GET4(USBHCRHDRA & ~0x00000300))); // Power switching supported, all ports powered at the same time
-		US.PUT4(USBHCRHDRB, 0x00000000);		//power switching global, devices removable
-		US.PUT4(USBHCRHSR, (US.GET4(USBHCRHSR) | 0x00010000)); 	//enable power on all ports
 				
 		//setup host controller
 		int saveFmInterval = US.GET4(USBHCFIR);
