@@ -8,8 +8,19 @@ import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.exceptions.UsbException;
 import ch.ntb.inf.deep.runtime.ppc32.Task;
 
 public class USB_Demo extends Task{
+	private boolean init = true;
 	
 	public void action(){
+		if(init){
+			try{
+				OhciHcd.init();
+			}
+			catch(UsbException e){
+				e.printStackTrace();
+			}
+			System.out.println("init done");
+			init = false;
+		}
 		if (nofActivations % 2000 == 0) {
 			System.out.println("t");
 		}
@@ -39,13 +50,5 @@ public class USB_Demo extends Task{
 		// Print a string to the stdout
 		System.out.println("USB Demo:");
 		
-		try{
-			OhciHcd.init();
-		}
-		catch(UsbException e){
-			e.printStackTrace();
-		}
-		System.out.println("init done");
-
 	}
 }
