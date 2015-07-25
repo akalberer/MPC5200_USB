@@ -137,7 +137,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	}
 	
 	private static void ohci_hcd_reset(){
-		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) & 0x200));		// reset HC, except RWC
+		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) & OHCI_CTRL_RWC));		// reset HC, except RWC
 		state = OhciState.OHCI_RH_HALTED;
 	}
 	
@@ -185,7 +185,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		InterruptMpc5200io ohciInt = new OhciHcd();
 		InterruptMpc5200io.install(ohciInt, 6); 				// USB is peripheral number 6
 		US.PUT4(ICTLPIMR, US.GET4(ICTLPIMR) & ~0x02000000);		// accept interrupts from USB
-		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x00000200) ); 	// #!activate Interrupt routing of HC (with activated: 0x0300)(ignored by 5200), and RemoteWakeupConnected
+//		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x00000200) ); 	// #!activate Interrupt routing of HC (with activated: 0x0300)(ignored by 5200), 
+																	// and RemoteWakeupConnected -> when commented out not active -> only needed by hid-devices
 
 		// read and set frame interval
 		val = (US.GET4(USBHCFIR) & 0x3FFF);
@@ -254,6 +255,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		
 		if( (US.GET4(USBHCFIR) & 0x7fff0000) == 0){
 			throw new UsbException("init error: Frame Interval Register is 0.");
+			//probably jump to software reset to try again
 		}
 		
 		//start controller operations
