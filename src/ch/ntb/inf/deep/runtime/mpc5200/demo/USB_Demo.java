@@ -9,6 +9,7 @@ import ch.ntb.inf.deep.runtime.ppc32.Task;
 
 public class USB_Demo extends Task{
 	private boolean init = true;
+	private boolean done = false;
 	
 	public void action(){
 		if(init){
@@ -25,13 +26,17 @@ public class USB_Demo extends Task{
 			System.out.println("t");
 		}
 		if(OhciHcd.inISR == true){
-			System.out.println(".");
+//			System.out.println(".");
+			OhciHcd.inISR = false;
 		}
-		try {
-			OhciHcd.run();
-		} catch (UsbException e) {
-			System.out.println("UsbException occured:");
-			e.printStackTrace();
+		if(!done){
+			try {
+				OhciHcd.run();
+			} catch (UsbException e) {
+				System.out.println("UsbException occured:");
+				e.printStackTrace();
+			}
+			done = true;
 		}
 	}
 	
@@ -49,6 +54,5 @@ public class USB_Demo extends Task{
 		Task.install(t);
 		// Print a string to the stdout
 		System.out.println("USB Demo:");
-		
 	}
 }

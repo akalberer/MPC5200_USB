@@ -21,23 +21,43 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	private static int[] testED_TD_data; //TODO
 	private static int[] bulkEDQueue;
 	private static int[] bulkEDQueue_empty; //TODO -> for init -> need empty list?
+	private static int[] doneList;
 	
 	private static OhciState state;
 	private static boolean intHalted = false;		// flag to detect if HC was halted due to interrupt
 		
-	public static final int OHCI_CTRL_HCFS = 0x000000C0;
-	public static final int OHCI_CTRL_RWC = 0x00000200;
-	public static final int OHCI_CTRL_CBSR = 0x00000003;
+	public static final int PORT_RESET_HW_DELAY = 10000;	// 10ms delay -> is hardware specific
 	
+	/**
+	 * HcControl (control) register masks
+	 */
+	public static final int OHCI_CTRL_PLE = 0x00000004;		// periodic list enable
+	public static final int OHCI_CTRL_IE = 0x00000008;		// isochronous enable
+	public static final int OHCI_CTRL_CLE = 0x00000010;		// control list enable
+	public static final int OHCI_CTRL_BLE = 0x00000020;		// bulk list enable
+	public static final int OHCI_CTRL_IR = 0x00000100;		// interrupt routing
+	public static final int OHCI_CTRL_RWE = 0x00000400;		// remote wakeup enable
+	public static final int OHCI_CTRL_HCFS = 0x000000C0;	// host controller functional state
+	public static final int OHCI_CTRL_RWC = 0x00000200;		// remote wakeup connected
+	public static final int OHCI_CTRL_CBSR = 0x00000003;	// control/bulk service ratio
+	
+	public static final int OHCI_SCHED_ENABLES = (OHCI_CTRL_CLE); //| OHCI_CTRL_BLE); //only bulk and control | OHCI_CTRL_PLE | OHCI_CTRL_IE);
 	public static final int OHCI_CONTROL_INIT = OHCI_CTRL_CBSR;
+	
+	/**
+	 * HcCommandStatus (cmdstatus) register masks
+	 */
+	public static final int OHCI_HCR = 0x00000001;		// host controller reset
+	public static final int OHCI_CLF = 0x00000002;		// control list filled
+	public static final int OHCI_BLF = 0x00000004;		// bulk list filled
+	public static final int OHCI_OCR = 0x00000008;		// ownership change request
+	public static final int OHCI_SOC = 0x00030000;		// scheduling overrun count
 	
 	public static final int OHCI_USB_RESET = 0x00000000;
 	public static final int OHCI_USB_RESUME = 0x00000040;
 	public static final int OHCI_USB_OPER = 0x00000080;
 	public static final int OHCI_USB_SUSPEND = 0x000000C0;
-	
-	public static final int OHCI_HCR = 0x00000001;
-		
+			
 	/** roothub a masks 
 	*/
 	public static final int	RH_A_NDP = 2;				// number of downstream ports
@@ -64,15 +84,15 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	 * HcInterruptEnable (USBHCIER)
 	 * HcInterruptDisable (USBHCIDR)
 	 */
-	public static final int OHCI_INTR_MIE = 0x80000000;		// master interrupt enable
-	public static final int OHCI_INTR_OC = 0x40000000;		// ownership change
-	public static final int OHCI_INTR_RHSC = 0x00000040;	// root hub status change
-	public static final int OHCI_INTR_FNO = 0x00000020;		// frame number overflow
-	public static final int OHCI_INTR_UE = 0x00000010;		// unrecoverable error
-	public static final int OHCI_INTR_RD = 0x00000008;		// resume detect
-	public static final int OHCI_INTR_SF = 0x00000004;		// start frame
-	public static final int OHCI_INTR_WDH = 0x00000002;		// writeback of done_head
 	public static final int OHCI_INTR_SO = 0x00000001;		// scheduling overrun
+	public static final int OHCI_INTR_WDH = 0x00000002;		// writeback of done_head
+	public static final int OHCI_INTR_SF = 0x00000004;		// start frame
+	public static final int OHCI_INTR_RD = 0x00000008;		// resume detect
+	public static final int OHCI_INTR_UE = 0x00000010;		// unrecoverable error
+	public static final int OHCI_INTR_FNO = 0x00000020;		// frame number overflow
+	public static final int OHCI_INTR_RHSC = 0x00000040;	// root hub status change
+	public static final int OHCI_INTR_OC = 0x40000000;		// ownership change
+	public static final int OHCI_INTR_MIE = 0x80000000;		// master interrupt enable
 	public static final int OHCI_INTR_INIT = (OHCI_INTR_MIE | OHCI_INTR_RHSC | OHCI_INTR_UE | OHCI_INTR_RD | OHCI_INTR_WDH);
 	
 	public static boolean inISR = false;
@@ -91,7 +111,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		
 		//check for an all 1's result -> typical consequence of dead, unclocked or unplugged devices
 		if( intState == 0x4000007F ){
-			// device died, disconneected
+			// device died, disconnected
 			state = OhciState.OHCI_RH_HALTED;
 			intHalted = true;
 			return;
@@ -124,9 +144,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		
 		if(state == OhciState.OHCI_RH_RUNNING){
 			US.PUT4(USBHCISR, intState);		// clears ISR Flags
-			US.PUT4(USBHCIDR, 0x80000000);		// enable USB Interrupts again
-		}
-				
+			US.PUT4(USBHCIER, 0x80000000);		// enable USB Interrupts again
+		}		
 	}
 	
 	public static void run() throws UsbException{
@@ -134,6 +153,18 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		if(intHalted){
 			throw new UsbException("HC died, detected by ISR");	//TODO improve error handling
 		}
+		//TODO thats not absolutely correct, just for testing:
+		US.PUT4(USBHCCHEDR, US.REF(testED));				//set ED for control transfer with a 0 setup packet
+		US.PUT4(USBHCBHEDR, US.REF(bulkEDQueue));			//set ED for bulk transfer
+
+		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|OHCI_INTR_SF));
+//		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)| OHCI_SCHED_ENABLES));	// activate list processing -> crashes processor!?
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
+//		US.GET4(USBHCCTRLR);		//flush writes?
+	}
+	
+	public static void rootHubReset() throws UsbException{
+		//TODO -> root_port_reset Z.614 ohci-hub.c
 	}
 	
 	private static void ohci_hcd_reset(){
@@ -181,10 +212,47 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			throw new UsbException("Wrong HC revision");
 		}
 		
+		//init structures
+		hcca = new byte[HCCA_SIZE];
+		testED = new int[4];
+		testED_empty = new int[4];
+		testED_TD = new int[4];
+		testED_TD_data = new int[64];
+		bulkEDQueue = new int[4];
+		bulkEDQueue_empty = new int[4];
+		doneList = new int[512];
+		
+		//init first endpoints for testing !?
+		// 2) allocate and init any Host Controller structures, including HCCA block
+		testED[0] = 0x04000000;		// max 1024, Control Format -> F=0, speed full, direction from TD, endpoint 0, functino address 0
+		testED[1] = US.REF(testED_TD);	// TD Queue Tail pointer
+		testED[2] = US.REF(testED_TD);	// TD Queue Head pointer
+		testED[3] = 0x00000000;		// no next endpoint
+		testED_TD[0] = 0x01E40000;	// buffer can be smaller (R=1), SETUP Packet, DelayInterrupt -> no Interrupt, DATA0, ErrorCount = 0 
+		testED_TD[1] = US.REF(testED_TD_data);
+		testED_TD[2] = 0x00000000;
+		testED_TD[3] = US.REF((testED_TD[3] + 0x3)); 		//last byte so + 3
+		
+		testED_empty[0] = 0;
+		testED_empty[1] = 0;
+		testED_empty[2] = 0;
+		testED_empty[3] = 0;
+		bulkEDQueue_empty[0] = 0;
+		bulkEDQueue_empty[1] = 0;
+		bulkEDQueue_empty[2] = 0;
+		bulkEDQueue_empty[3] = 0;
+		
+		// 3) load driver, take control of host controller
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) |(1 << OCR)) ); // set OwnershipChangeRequest
+		
 		// -> routed to interrupt controller in SIU -> route from there to SMI, NORMAL interrupt
 		InterruptMpc5200io ohciInt = new OhciHcd();
 		InterruptMpc5200io.install(ohciInt, 6); 				// USB is peripheral number 6
 		US.PUT4(ICTLPIMR, US.GET4(ICTLPIMR) & ~0x02000000);		// accept interrupts from USB
+		if( (US.GET4(0xf0000530) & 0x00008000) != 0){			//already usb interrupt pending
+			US.PUT4(0xf0000530, 0x00000000);
+			System.out.println("already 1");
+		}
 //		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x00000200) ); 	// #!activate Interrupt routing of HC (with activated: 0x0300)(ignored by 5200), 
 																	// and RemoteWakeupConnected -> when commented out not active -> only needed by hid-devices
 
@@ -247,10 +315,10 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		System.out.println("Addr HCCA: ");
 		System.out.println(US.REF(hcca));
 		US.PUT4(USBHCHCCAR, US.REF(hcca));			// set pointer to HCCA
+		System.out.println("Addr Done: ");
+		System.out.println(US.REF(doneList));
+		US.PUT4(USBHCDHR, US.REF(doneList));		// memory for done head
 				
-		// 3) load driver, take control of host controller
-//		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) |(1 << OCR)) ); // set OwnershipChangeRequest
-		
 		periodicReInit();
 		
 		if( (US.GET4(USBHCFIR) & 0x7fff0000) == 0){
@@ -267,8 +335,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		US.PUT4(USBHCRHSR, (US.GET4(USBHCRHSR) | RH_HS_DRWE ));
 		
 		// choose the interrupts we care about now, others later on demand
-		US.PUT4(USBHCISR, 0xFFFFFFFF);		// clear interrupt status register
-		US.PUT4(USBHCIER, OHCI_INTR_INIT);	// enable desired interrupts
+		US.PUT4(USBHCISR, 0xFFFFFFFF);				// clear interrupt status register
+		US.PUT4(USBHCIER, OHCI_INTR_INIT);			// enable desired interrupts
 		
 		val = US.GET4(USBHCRHDRA);
 		val &= ~(RH_A_PSM | RH_A_OCPM | RH_A_NPS);	// Power switching supported, all ports powered at the same time
@@ -280,7 +348,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 
 		delay = (US.GET4(USBHCRHDRA) & 0xFF000000) >> 23 * 1000;	// -> POTPGT delay after powering hub
 		while(Kernel.time() - currentTime < delay);					// wait
-		
+				
 //		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|0xC000007B));		// enable interrupts except SOF
 //		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x010));		// CLE > Control List Enable
 //		// set ControlListFilled
@@ -302,34 +370,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	}
 	
 	static{
-		hcca = new byte[HCCA_SIZE];
-		testED = new int[4];
-		testED_empty = new int[4];
-		testED_TD = new int[4];
-		testED_TD_data = new int[64];
-		bulkEDQueue = new int[4];
-		bulkEDQueue_empty = new int[4];
-		
-		//init first endpoints for testing !?
-		// 2) allocate and init any Host Controller structures, including HCCA block
-		testED[0] = 0x04000000;		// max 1024, Control Format -> F=0, speed full, direction from TD, endpoint 0, functino address 0
-		testED[1] = US.REF(testED_TD);	// TD Queue Tail pointer
-		testED[2] = US.REF(testED_TD);	// TD Queue Head pointer
-		testED[3] = 0x00000000;		// no next endpoint
-		testED_TD[0] = 0x01E40000;	// buffer can be smaller (R=1), SETUP Packet, DelayInterrupt -> no Interrupt, DATA0, ErrorCount = 0 
-		testED_TD[1] = US.REF(testED_TD_data);
-		testED_TD[2] = 0x00000000;
-		testED_TD[3] = US.REF((testED_TD[3] + 0x3)); 		//last byte so + 3
-		
-		testED_empty[0] = 0;
-		testED_empty[1] = 0;
-		testED_empty[2] = 0;
-		testED_empty[3] = 0;
-		bulkEDQueue_empty[0] = 0;
-		bulkEDQueue_empty[1] = 0;
-		bulkEDQueue_empty[2] = 0;
-		bulkEDQueue_empty[3] = 0;
-		
+						
 		US.PUT4(GPWER, US.GET4(GPWER) | 0x80000000);	// enable GPIO use
 		US.PUT4(GPWDDR, US.GET4(GPWDDR) | 0x80000000);	// make output
 		US.PUT4(GPWOUT, US.GET4(GPWOUT) | 0x80000000);
