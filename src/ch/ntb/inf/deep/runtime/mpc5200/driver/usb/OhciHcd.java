@@ -27,6 +27,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	private static boolean intHalted = false;		// flag to detect if HC was halted due to interrupt
 		
 	public static final int PORT_RESET_HW_DELAY = 10000;	// 10ms delay -> is hardware specific
+	public static final int PORT_RESET_DELAY = 50000;		// 50ms reset signaling
 	
 	/**
 	 * HcControl (control) register masks
@@ -67,6 +68,21 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	public static final int	RH_A_OCPM = 0x00000800;		// over current protection mode
 	public static final int RH_A_NOCP =	0x00001000;		// no over current protection	
 	public static final int RH_A_POTPGT = (0xFF << 24);	// power on to power good time
+	
+	/** roothub.portstatus [i] bits 
+	*/
+	public static final int RH_PS_CCS = 0x00000001;		// current connect status
+	public static final int RH_PS_PES = 0x00000002;		// port enable status
+	public static final int RH_PS_PSS = 0x00000004;		// port suspend status
+	public static final int RH_PS_POCI = 0x00000008;	// port over current indicator
+	public static final int RH_PS_PRS = 0x00000010;		// port reset status
+	public static final int RH_PS_PPS = 0x00000100;		// port power status
+	public static final int RH_PS_LSDA = 0x00000200;	// low speed device attached
+	public static final int RH_PS_CSC = 0x00010000;		// connect status change
+	public static final int RH_PS_PESC = 0x00020000;	// port enable status change
+	public static final int RH_PS_PSSC = 0x00040000;	// port suspend status change
+	public static final int RH_PS_OCIC = 0x00080000;	// over current indicator change
+	public static final int RH_PS_PRSC = 0x00100000;	// port reset status change
 	
 	/**
 	 * roothub status bits
@@ -154,8 +170,10 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			throw new UsbException("HC died, detected by ISR");	//TODO improve error handling
 		}
 		//TODO thats not absolutely correct, just for testing:
+		System.out.println("testED: ");
+		System.out.println(US.REF(testED));
 		US.PUT4(USBHCCHEDR, US.REF(testED));				//set ED for control transfer with a 0 setup packet
-		US.PUT4(USBHCBHEDR, US.REF(bulkEDQueue));			//set ED for bulk transfer
+//		US.PUT4(USBHCBHEDR, US.REF(bulkEDQueue));			//set ED for bulk transfer
 
 		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|OHCI_INTR_SF));
 //		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)| OHCI_SCHED_ENABLES));	// activate list processing -> crashes processor!?
@@ -163,8 +181,44 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 //		US.GET4(USBHCCTRLR);		//flush writes?
 	}
 	
-	public static void rootHubReset() throws UsbException{
-		//TODO -> root_port_reset Z.614 ohci-hub.c
+	/**
+	 * reset root hub
+	 * each reset needs around 10ms, need at least 5, better 6 resets to get the full 50ms reset signaling for the connected device
+	 * @throws UsbException
+	 */
+	public static void resetRootHub() throws UsbException{
+		int portResetFrameNumDone = US.GET4(USBHCFNR) + PORT_RESET_DELAY;	// check with actual frame number
+		int	nofResets = 6;
+		
+		do{
+			long currentTime = Kernel.time();
+			long lastTime = 0;
+			while(Kernel.time() - currentTime < 2*PORT_RESET_HW_DELAY){		// wait
+				if( (US.GET4(USBHCRHP1SR) & RH_PS_PRS) == 0){	// if no reset pending
+					lastTime = Kernel.time();
+					break;
+				}
+			}
+			
+			if(lastTime == 0 || !(lastTime < (currentTime + 2*PORT_RESET_HW_DELAY)) ){	//to be sure, if it should happen, that on coincidence kernel.time is 0
+				throw new UsbException("OhciHcd: hardware timeout");
+			}
+			
+			int tmp = US.GET4(USBHCRHP1SR);
+			if( (tmp & RH_PS_CCS) == 0 ){
+				throw new UsbException("OhciHcd: no device connected");
+			}
+			if( (tmp & RH_PS_PRSC) == 1 ){		// port reset completed bit still 1 -> reset it by writing 1
+				US.PUT4(USBHCRHP1SR, (US.GET4(USBHCRHP1SR) | RH_PS_PRSC ));
+			}
+			
+			// start next reset, wait till it is probably done
+			US.PUT4(USBHCRHP1SR, (US.GET4(USBHCRHP1SR) | RH_PS_PRS) );
+			currentTime = Kernel.time();
+			while(Kernel.time() - currentTime < PORT_RESET_HW_DELAY);		// wait 10ms
+			
+			nofResets--;	// max 6 resets with 10ms -> decrement			
+		}while(	(US.GET4(USBHCFNR) < portResetFrameNumDone) && nofResets > 0);
 	}
 	
 	private static void ohci_hcd_reset(){

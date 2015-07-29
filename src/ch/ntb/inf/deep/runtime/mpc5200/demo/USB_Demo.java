@@ -31,6 +31,7 @@ public class USB_Demo extends Task{
 		}
 		if(!done){
 			try {
+				OhciHcd.resetRootHub();
 				OhciHcd.run();
 			} catch (UsbException e) {
 				System.out.println("UsbException occured:");
