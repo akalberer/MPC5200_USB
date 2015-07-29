@@ -176,7 +176,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 //		US.PUT4(USBHCBHEDR, US.REF(bulkEDQueue));			//set ED for bulk transfer
 
 		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|OHCI_INTR_SF));
-//		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)| OHCI_SCHED_ENABLES));	// activate list processing -> crashes processor!?
+		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)| OHCI_SCHED_ENABLES));	// activate list processing -> crashes processor!?
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 //		US.GET4(USBHCCTRLR);		//flush writes?
 	}
@@ -278,7 +278,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		
 		//init first endpoints for testing !?
 		// 2) allocate and init any Host Controller structures, including HCCA block
-		testED[0] = 0x04000000;		// max 1024, Control Format -> F=0, speed full, direction from TD, endpoint 0, functino address 0
+		testED[0] = 0x04000000;		// max 1024, Control Format -> F=0, speed full, direction from TD, endpoint 0, function address 0
 		testED[1] = US.REF(testED_TD);	// TD Queue Tail pointer
 		testED[2] = US.REF(testED_TD);	// TD Queue Head pointer
 		testED[3] = 0x00000000;		// no next endpoint
@@ -395,13 +395,14 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		val = US.GET4(USBHCRHDRA);
 		val &= ~(RH_A_PSM | RH_A_OCPM | RH_A_NPS);	// Power switching supported, all ports powered at the same time
 		val |= (RH_A_NOCP | RH_A_NDP);				// config PowerSwitchingMode, OverCurrentProtection, NofDownstreamPorts
+		val |= 0x32000000;							// 100ms PowerOnToPowerGoodTime
 		US.PUT4(USBHCRHDRA, val ); 	
 		US.PUT4(USBHCRHDRB, 0x00000000);							// power switching global, devices removable
 //		US.PUT4(USBHCRHSR, 0x00000001);								// turn off power
 		US.PUT4(USBHCRHSR, (US.GET4(USBHCRHSR) | RH_HS_LPSC)); 		//enable power on all ports
 
-		delay = (US.GET4(USBHCRHDRA) & 0xFF000000) >> 23 * 1000;	// -> POTPGT delay after powering hub
-		while(Kernel.time() - currentTime < delay);					// wait
+		delay = ((US.GET4(USBHCRHDRA) & 0xFF000000) >> 23) * 1000;	// wait -> POTPGT * 2 (in 2ms unit) delay after powering hub
+		while(Kernel.time() - currentTime < delay);					// give USB device 100ms time to set up
 				
 //		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|0xC000007B));		// enable interrupts except SOF
 //		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x010));		// CLE > Control List Enable
