@@ -190,20 +190,22 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		setup_TD[2] = 0xF2E00000;	// TODO 0x01E40000;	// buffer can be smaller (R=1), SETUP Packet, DelayInterrupt -> no Interrupt, DATA0, ErrorCount = 0 
 		setup_TD[3] = US.REF(setupGetDevDescriptor);
 		setup_TD[4] = (US.REF(getDevDescriptor_TD) + 8);// << 4);
-		setup_TD[5] = US.REF(setupGetDevDescriptor[7]);
+		setup_TD[5] = (US.REF(setupGetDevDescriptor) + 7);
 		System.out.println("setup TD:");
 		System.out.println(US.REF(setup_TD));
 		System.out.println("setup TD2:");
-		System.out.println(US.REF(setup_TD) +8);
+		System.out.println(US.REF(setup_TD) + 8);
 		getDevDescriptor_TD[2] = 0xF3F00000;	//TODO 0x01F40000;	// IN DATA1 Packet
 		getDevDescriptor_TD[3] = US.REF(dataGetDevDescriptor);
 		getDevDescriptor_TD[4] = (US.REF(statusGetDevDescriptor_TD) +8);	// TODO needed? (US.REF(statusGetDevDescriptor_TD) << 4);
-		getDevDescriptor_TD[5] = US.REF(dataGetDevDescriptor[63]);
+		getDevDescriptor_TD[5] = (US.REF(dataGetDevDescriptor) + 7);
 		System.out.println("data TD:");
 		System.out.println(US.REF(getDevDescriptor_TD));
+		System.out.println("data TD:");
+		System.out.println((US.REF(getDevDescriptor_TD) + 8));
 		statusGetDevDescriptor_TD[2] = 0xF3E80000;		//out, data1
 		statusGetDevDescriptor_TD[3] = 0x00000000;
-		statusGetDevDescriptor_TD[4] = (US.REF(empty_TD) +8);
+		statusGetDevDescriptor_TD[4] = (US.REF(empty_TD) + 8);
 		statusGetDevDescriptor_TD[5] = 0x00000000;
 		System.out.println("status TD:");
 		System.out.println(US.REF(statusGetDevDescriptor_TD));
@@ -215,8 +217,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		//setup DATA0: get device descriptor
 		setupGetDevDescriptor[0] = (byte) 0x80;		// bRequestType: get descriptor
 		setupGetDevDescriptor[1] = (byte) 0x06;		// bRequest
-		setupGetDevDescriptor[2] = (byte) 0x01;		// index 0type of descriptor: DeviceDescriptor
-		setupGetDevDescriptor[3] = (byte) 0x00;		// type of descriptor: DeviceDescriptor
+		setupGetDevDescriptor[2] = (byte) 0x00;		// index 0
+		setupGetDevDescriptor[3] = (byte) 0x01;		// type of descriptor: DeviceDescriptor
 		setupGetDevDescriptor[4] = (byte) 0x00;		// ID of language, else 0
 		setupGetDevDescriptor[5] = (byte) 0x00;
 		setupGetDevDescriptor[6] = (byte) 0x08;		// length to read (8 bytes)
@@ -359,6 +361,10 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		bulkEDQueue_empty[3] = 0;
 		bulkEDQueue_empty[4] = 0;
 		bulkEDQueue_empty[5] = 0;
+		
+		for(int i = 0; i < 64; i++){
+			dataGetDevDescriptor[i] = 0;
+		}
 		
 		// 3) load driver, take control of host controller
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) |(1 << OCR)) ); // set OwnershipChangeRequest
