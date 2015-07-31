@@ -14,7 +14,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	private static final int OCR = 3;			
 	
 	private static byte[] hcca;
-	private static final int HCCA_SIZE = 256;
+	private static final int HCCA_SIZE = 263;	//256 + 7 
 	private static int[] testED;		//TODO has to be built in another way (possible to create more than one), just for test
 	private static int[] testED_empty;	//TODO -> for init -> need empty list?
 	private static int[] setup_TD;		//TODO
@@ -176,34 +176,41 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			throw new UsbException("HC died, detected by ISR");	//TODO improve error handling
 		}
 		
-		testED[0] = 0x00084000;		// set skip bit
-		testED[1] = (US.REF(empty_TD));// << 4);	// TD Queue Tail pointer
-		testED[2] = (US.REF(setup_TD));// << 4);	// TD Queue Head pointer
-		testED[3] = US.REF(testED);//0x00000000;		// no next endpoint
+		long currentTime = Kernel.time();
+		while(Kernel.time() - currentTime < 50000); // wait 50ms after reset
+		
+		testED[2] = 0x00084000;		// set skip bit
+		testED[3] = (US.REF(empty_TD) + 8);// << 4);	// TD Queue Tail pointer
+		testED[4] = (US.REF(setup_TD) + 8);// << 4);	// TD Queue Head pointer
+		testED[5] = (US.REF(testED) + 8);//0x00000000;		// no next endpoint
 		System.out.println("testED: ");
 		System.out.println(US.REF(testED));
-		setup_TD[0] = 0xF2E00000;	// TODO 0x01E40000;	// buffer can be smaller (R=1), SETUP Packet, DelayInterrupt -> no Interrupt, DATA0, ErrorCount = 0 
-		setup_TD[1] = US.REF(setupGetDevDescriptor);
-		setup_TD[2] = (US.REF(getDevDescriptor_TD));// << 4);
-		setup_TD[3] = US.REF(setupGetDevDescriptor[7]);
+		System.out.println("testED2: ");
+		System.out.println(US.REF(testED) + 8);
+		setup_TD[2] = 0xF2E00000;	// TODO 0x01E40000;	// buffer can be smaller (R=1), SETUP Packet, DelayInterrupt -> no Interrupt, DATA0, ErrorCount = 0 
+		setup_TD[3] = US.REF(setupGetDevDescriptor);
+		setup_TD[4] = (US.REF(getDevDescriptor_TD) + 8);// << 4);
+		setup_TD[5] = US.REF(setupGetDevDescriptor[7]);
 		System.out.println("setup TD:");
 		System.out.println(US.REF(setup_TD));
-		getDevDescriptor_TD[0] = 0xF3F00000;	//TODO 0x01F40000;	// IN DATA1 Packet
-		getDevDescriptor_TD[1] = US.REF(dataGetDevDescriptor);
-		getDevDescriptor_TD[2] = US.REF(statusGetDevDescriptor_TD);	// TODO needed? (US.REF(statusGetDevDescriptor_TD) << 4);
-		getDevDescriptor_TD[3] = US.REF(dataGetDevDescriptor[63]);
+		System.out.println("setup TD2:");
+		System.out.println(US.REF(setup_TD) +8);
+		getDevDescriptor_TD[2] = 0xF3F00000;	//TODO 0x01F40000;	// IN DATA1 Packet
+		getDevDescriptor_TD[3] = US.REF(dataGetDevDescriptor);
+		getDevDescriptor_TD[4] = (US.REF(statusGetDevDescriptor_TD) +8);	// TODO needed? (US.REF(statusGetDevDescriptor_TD) << 4);
+		getDevDescriptor_TD[5] = US.REF(dataGetDevDescriptor[63]);
 		System.out.println("data TD:");
 		System.out.println(US.REF(getDevDescriptor_TD));
-		statusGetDevDescriptor_TD[0] = 0xF3E80000;		//out, data1
-		statusGetDevDescriptor_TD[1] = 0x00000000;
-		statusGetDevDescriptor_TD[2] = US.REF(empty_TD);
+		statusGetDevDescriptor_TD[2] = 0xF3E80000;		//out, data1
 		statusGetDevDescriptor_TD[3] = 0x00000000;
+		statusGetDevDescriptor_TD[4] = (US.REF(empty_TD) +8);
+		statusGetDevDescriptor_TD[5] = 0x00000000;
 		System.out.println("status TD:");
 		System.out.println(US.REF(statusGetDevDescriptor_TD));
-		empty_TD[0] = 0xF0000000;
-		empty_TD[1] = 0x00000000;
-		empty_TD[2] = 0x00000000;
+		empty_TD[2] = 0xF0000000;
 		empty_TD[3] = 0x00000000;
+		empty_TD[4] = 0x00000000;
+		empty_TD[5] = 0x00000000;
 		
 		//setup DATA0: get device descriptor
 		setupGetDevDescriptor[0] = (byte) 0x80;		// bRequestType: get descriptor
@@ -215,12 +222,12 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		setupGetDevDescriptor[6] = (byte) 0x08;		// length to read (8 bytes)
 		setupGetDevDescriptor[7] = (byte) 0x00;		// high byte
 		
-		testED[0] = 0x00080000;			//clear skip bit
+		testED[2] = 0x00080000;			//clear skip bit
 		
 		//TODO thats not absolutely correct, just for testing:
 //		US.PUT4(USBHCCHEDR, US.REF(testED));				//set ED for control transfer with a 0 setup packet
 //		US.PUT4(USBHCBHEDR, US.REF(bulkEDQueue));			//set ED for bulk transfer
-
+		
 		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|OHCI_INTR_SF));
 		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)| OHCI_SCHED_ENABLES));	// activate list processing -> crashes processor!?
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
@@ -314,44 +321,44 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		
 		//init structures
 		hcca = new byte[HCCA_SIZE];
-		testED = new int[4];
-		testED_empty = new int[4];
-		setup_TD = new int[4];
-		getDevDescriptor_TD = new int[4];
-		statusGetDevDescriptor_TD = new int[4];
-		empty_TD = new int[4];
+		testED = new int[6];
+		testED_empty = new int[6];
+		setup_TD = new int[6];
+		getDevDescriptor_TD = new int[6];
+		statusGetDevDescriptor_TD = new int[6];
+		empty_TD = new int[6];
 		setupGetDevDescriptor = new byte[8];
 		dataGetDevDescriptor = new byte[64];
 		statusGetDevDescriptor = new byte[8];
-		bulkEDQueue = new int[4];
-		bulkEDQueue_empty = new int[4];
+		bulkEDQueue = new int[6];
+		bulkEDQueue_empty = new int[6];
 		doneList = new int[512];
 		
 		//init first endpoints for testing !?
 		// 2) allocate and init any Host Controller structures, including HCCA block
-		testED[0] = 0x00080000;		// max 8 Bytes first, Control Format -> F=0, speed full, direction from TD, endpoint 0, function address 0
-		testED[1] = (US.REF(empty_TD));// << 4);	// TD Queue Tail pointer
-		testED[2] = (US.REF(empty_TD));// << 4);	// TD Queue Head pointer
-		testED[3] = US.REF(testED);//0x00000000;		// no next endpoint
+		testED[2] = 0x00080000;		// max 8 Bytes first, Control Format -> F=0, speed full, direction from TD, endpoint 0, function address 0
+		testED[3] = (US.REF(empty_TD) + 8);// << 4);	// TD Queue Tail pointer
+		testED[4] = (US.REF(empty_TD) + 8);// << 4);	// TD Queue Head pointer
+		testED[5] = (US.REF(testED) + 8);//0x00000000;		// no next endpoint
 		System.out.println("testED: ");
 		System.out.println(US.REF(testED));
 		
-		empty_TD[0] = 0xF0000000;
-		empty_TD[1] = 0x00000000;
-		empty_TD[2] = 0x00000000;
+		empty_TD[2] = 0xF0000000;
 		empty_TD[3] = 0x00000000;
+		empty_TD[4] = 0x00000000;
+		empty_TD[5] = 0x00000000;
 		
-		testED_empty[0] = 0;
-		testED_empty[1] = 0;
 		testED_empty[2] = 0;
 		testED_empty[3] = 0;
+		testED_empty[4] = 0;
+		testED_empty[5] = 0;
 		System.out.println("testED_empty: ");
 		System.out.println(US.REF(testED_empty));
 		
-		bulkEDQueue_empty[0] = 0;
-		bulkEDQueue_empty[1] = 0;
 		bulkEDQueue_empty[2] = 0;
 		bulkEDQueue_empty[3] = 0;
+		bulkEDQueue_empty[4] = 0;
+		bulkEDQueue_empty[5] = 0;
 		
 		// 3) load driver, take control of host controller
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) |(1 << OCR)) ); // set OwnershipChangeRequest
@@ -419,16 +426,16 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		
 		// now we're in the SUSPEND state ... must go OPERATIONAL within 2msec else HC enters RESUME
 
-		US.PUT4(USBHCCHEDR, US.REF(testED));				//set ED for control transfer
+		US.PUT4(USBHCCHEDR, (US.REF(testED) + 8));				//set ED for control transfer
 //		US.PUT4(USBHCBHEDR, US.REF(bulkEDQueue_empty));		//set ED for bulk transfer
 		
 		// 4) Set up HC registers and HC Communications Area
 		System.out.println("Addr HCCA: ");
 		System.out.println(US.REF(hcca));
-		US.PUT4(USBHCHCCAR, US.REF(hcca));			// set pointer to HCCA
+		US.PUT4(USBHCHCCAR, (US.REF(hcca) + 28));			// set pointer to HCCA
 		System.out.println("Addr Done: ");
 		System.out.println(US.REF(doneList));
-		US.PUT4(USBHCDHR, US.REF(doneList));		// memory for done head
+		US.PUT4(USBHCDHR, (US.REF(doneList) + 8));		// memory for done head
 				
 		periodicReInit();
 		
