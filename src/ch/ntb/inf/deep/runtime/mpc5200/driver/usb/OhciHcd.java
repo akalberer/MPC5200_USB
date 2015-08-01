@@ -177,7 +177,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		}
 		
 		long currentTime = Kernel.time();
-		while(Kernel.time() - currentTime < 50000); // wait 50ms after reset
+		while(Kernel.time() - currentTime < 10000); // wait 10ms after reset
 		
 		testED[2] = 0x00084000;		// set skip bit
 		testED[3] = (US.REF(empty_TD) + 8);// << 4);	// TD Queue Tail pointer
@@ -281,6 +281,50 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		state = OhciState.OHCI_RH_HALTED;
 	}
 	
+	public static void enqueueTd(TransferDescriptor td){
+		testED[2] = 0x00084000;		// set skip bit -> Endpoint will be skiped
+				
+		if( (testED[3] & 0xFFFFFFF0 ) == (testED[4]  & 0xFFFFFFF0) ){		// tail == head pointer, no td in the list
+			if( US.GET4(testED[3]) == 0xF0000000 ){			// tail is empty dummy descriptor
+				td.setNextTD(testED[3]);					// set nextTd in td
+				testED[4] = td.getTdAddress();				// set td as new head pointer
+			}
+		}
+		else{				// already TD's in list
+			// find last td before empty dummy descriptor, start at head pointer
+			int nextTd = (US.GET4(testED[4]) + 8);		// NextTD
+			int lastTd = 0;
+			int nofSearches = 0;
+			while (US.GET4( nextTd ) != 0xF0000000 && (nofSearches < 2000) ){
+				lastTd = nextTd;
+				nextTd = (US.GET4(nextTd) + 8);			// NextTD field in TransferDescriptor
+				nofSearches++;
+			}
+			if(nofSearches >= 2000){
+				System.out.println("Search of TDs failed");
+				return;		//TODO look if it works and remove this or throw exception
+			}
+			else{
+				// add before empty TD
+				int addrNextList = (US.GET4(lastTd) + 8);
+				US.PUT4((US.GET4(lastTd) + 8), td.getTdAddress());
+				td.setNextTD(addrNextList);
+			}			
+		}
+		
+		if( (td.getType() == TdType.IN) ||  (td.getType()== TdType.OUT)){
+			// read data toggle from endpoint
+			if( (testED[4] & 0x00000002) != 0){		
+				td.setDataToggle(true);
+			}
+			else{
+				td.setDataToggle(false);
+			}
+		}
+		testED[2] = 0x00084000;		// activate list processing
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
+	}
+	
 	private static void updateDoneList(){
 		//TODO -> ohci-q.c Z.932ff
 	}
@@ -349,6 +393,9 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		empty_TD[3] = 0x00000000;
 		empty_TD[4] = 0x00000000;
 		empty_TD[5] = 0x00000000;
+		
+		TransferDescriptor test = new TransferDescriptor();
+		OhciHcd.enqueueTd(test);
 		
 		testED_empty[2] = 0;
 		testED_empty[3] = 0;
