@@ -341,10 +341,11 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		if( (testED[3] & 0xFFFFFFF0 ) == (testED[4]  & 0xFFFFFFF0) ){		// tail == head pointer, no td in the list
 			System.out.println("list is empty.");
 			if( US.GET4(testED[4]) == 0xF0000000 ){			// head is empty dummy descriptor
-				System.out.println("tail is empty descriptor");
-				td.setNextTD(testED[3]);					// set nextTd in td
+				System.out.println("head is empty descriptor");
+//				td.setNextTD( ((testED[4] & 0xFFFFFFF0)));	//TODO set nextTd in td
+				td.setNextTD( US.REF(empty_TD) + 8 );	// set nextTd in td
 				testED[4] = td.getTdAddress();				// set td as new head pointer
-				US.PUT4(USBHCCHEDR, (US.REF(testED) + 8));	//set Head ED for control transfer
+				US.PUT4(USBHCCHEDR, td.getTdAddress());	//set Head ED for control transfer
 			}
 			//TODO test this!
 		}
@@ -354,7 +355,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			int nextTd = ((testED[4] & 0xFFFFFFF0) + 8);		// NextTD
 			System.out.println("testED[4]:");
 			System.out.println(testED[4]);
-			int lastTd = 0;
+			int lastTd = nextTd;
 			int nofSearches = 0;
 			while (US.GET4(US.GET4(nextTd)) != 0xF0000000 && (nofSearches < 2000) ){
 				lastTd = nextTd;
