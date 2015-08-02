@@ -12,6 +12,7 @@ public class TransferDescriptor {
 	}
 	
 	public TransferDescriptor(TdType type, byte[] buffer, int length){
+		this.transferDescriptor = new int[6];
 		switch(type){
 			case SETUP:
 				transferDescriptor[2] = 0xF2E00000;			// setup always DATA0
@@ -30,7 +31,12 @@ public class TransferDescriptor {
 				break;
 				
 		}
-		setCurrentBufferPointer(buffer, length);
+		if((buffer == null) && (length == 0)){				// empty data buffer
+			setEmptyUserBufferPointer();
+		}
+		else{
+			setCurrentBufferPointer(buffer, length);
+		}
 		this.tdType = type;
 	}
 	
@@ -39,12 +45,21 @@ public class TransferDescriptor {
 		transferDescriptor[5] = (US.REF(buffer) + (length - 1));
 	}
 	
+	public void setEmptyUserBufferPointer(){
+		transferDescriptor[3] = 0x00000000;
+		transferDescriptor[5] = 0x00000000;
+	}
+	
 	public TdType getType(){
 		return tdType;
 	}
 
+	/**
+	 * set Data Toggle
+	 * @param toggle false: DATA0; true: DATA1
+	 */
 	public void setDataToggle(boolean toggle) {
-		if(toggle){
+		if(!toggle){
 			transferDescriptor[2] |= 0x02000000;
 		}
 		else{
