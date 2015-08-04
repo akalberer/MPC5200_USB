@@ -12,7 +12,7 @@ public class TransferDescriptor {
 	}
 	
 	public TransferDescriptor(TdType type, byte[] buffer, int length){
-		this.transferDescriptor = new int[6];
+		this();
 		switch(type){
 			case SETUP:
 				transferDescriptor[2] = 0xF2E00000;			// setup always DATA0
