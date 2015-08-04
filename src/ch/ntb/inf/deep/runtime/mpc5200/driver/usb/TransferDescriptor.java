@@ -11,7 +11,7 @@ public class TransferDescriptor {
 		this.transferDescriptor = new int[6];
 	}
 	
-	public TransferDescriptor(TdType type, byte[] buffer, int length){
+	public TransferDescriptor(TdType type){
 		this();
 		switch(type){
 			case SETUP:
@@ -29,8 +29,14 @@ public class TransferDescriptor {
 			case STATUS_OUT:
 				transferDescriptor[2] = 0xF3E80000;			// status always DATA1
 				break;
-				
+			case EMPTY:
+				transferDescriptor[2] = 0xF0000000;			// empty TD, only error field set
+				break;
 		}
+	}
+	
+	public TransferDescriptor(TdType type, byte[] buffer, int length){
+		this(type);
 		if(buffer == null){				// no data buffer
 			System.out.println("set no data buffer");
 			setEmptyUserBufferPointer();
@@ -74,5 +80,12 @@ public class TransferDescriptor {
 	
 	public int getTdAddress(){
 		return (US.REF(transferDescriptor) + 8);
+	}
+	
+	public boolean done(){
+		if( (transferDescriptor[2] & 0xF0000000) == 0){
+			return true;
+		}
+		return false;
 	}
 }

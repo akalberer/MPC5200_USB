@@ -5,5 +5,6 @@ public enum TdType {
 	OUT,
 	IN,
 	STATUS_IN,
-	STATUS_OUT
+	STATUS_OUT,
+	EMPTY
 }
