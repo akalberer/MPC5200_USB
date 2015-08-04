@@ -31,7 +31,8 @@ public class TransferDescriptor {
 				break;
 				
 		}
-		if((buffer == null) && (length == 0)){				// empty data buffer
+		if(buffer == null){				// no data buffer
+			System.out.println("set no data buffer");
 			setEmptyUserBufferPointer();
 		}
 		else{

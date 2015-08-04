@@ -13,6 +13,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	private static final int FSMPS = (0x7FFF & (6 * (FI - 210)/7));
 	private static final int OCR = 3;			
 	
+	private static final boolean verbose_dbg = false;
+	
 	private static byte[] hcca;
 	private static final int HCCA_SIZE = 263;	//256 + 7 
 	private static int[] testED;		//TODO has to be built in another way (possible to create more than one), just for test
@@ -190,33 +192,41 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		testED[3] = (US.REF(empty_TD) + 8);// << 4);	// TD Queue Tail pointer
 		testED[4] = (US.REF(setup_TD) + 8);// << 4);	// TD Queue Head pointer
 		testED[5] = (US.REF(testED) + 8);//0x00000000;		// no next endpoint
-		System.out.println("testED: ");
-		System.out.println(US.REF(testED));
-		System.out.println("testED2: ");
-		System.out.println(US.REF(testED) + 8);
+		if(verbose_dbg){
+			System.out.println("testED: ");
+			System.out.println(US.REF(testED));
+			System.out.println("testED2: ");
+			System.out.println(US.REF(testED) + 8);
+		}
 		setup_TD[2] = 0xF2E00000;	// TODO 0x01E40000;	// buffer can be smaller (R=1), SETUP Packet, DelayInterrupt -> no Interrupt, DATA0, ErrorCount = 0 
 		setup_TD[3] = US.REF(setupGetDevDescriptor);
 		setup_TD[4] = (US.REF(getDevDescriptor_TD) + 8);// << 4);
 		setup_TD[5] = (US.REF(setupGetDevDescriptor) + 7);
-		System.out.println("setup TD:");
-		System.out.println(US.REF(setup_TD));
-		System.out.println("setup TD2:");
-		System.out.println(US.REF(setup_TD) + 8);
+		if(verbose_dbg){
+			System.out.println("setup TD:");
+			System.out.println(US.REF(setup_TD));
+			System.out.println("setup TD2:");
+			System.out.println(US.REF(setup_TD) + 8);
+		}
 		getDevDescriptor_TD[2] = 0xF3F00000;	//TODO 0x01F40000;	// IN DATA1 Packet
 		dataToggle = true;
 		getDevDescriptor_TD[3] = US.REF(dataGetDevDescriptor);
 		getDevDescriptor_TD[4] = (US.REF(statusGetDevDescriptor_TD) +8);	// TODO needed? (US.REF(statusGetDevDescriptor_TD) << 4);
 		getDevDescriptor_TD[5] = (US.REF(dataGetDevDescriptor) + 7);
-		System.out.println("data TD:");
-		System.out.println(US.REF(getDevDescriptor_TD));
-		System.out.println("data TD:");
-		System.out.println((US.REF(getDevDescriptor_TD) + 8));
+		if(verbose_dbg){
+			System.out.println("data TD:");
+			System.out.println(US.REF(getDevDescriptor_TD));
+			System.out.println("data TD:");
+			System.out.println((US.REF(getDevDescriptor_TD) + 8));
+		}
 		statusGetDevDescriptor_TD[2] = 0xF3E80000;		//out, data1
 		statusGetDevDescriptor_TD[3] = 0x00000000;
 		statusGetDevDescriptor_TD[4] = (US.REF(empty_TD) + 8);
 		statusGetDevDescriptor_TD[5] = 0x00000000;
-		System.out.println("status TD:");
-		System.out.println(US.REF(statusGetDevDescriptor_TD));
+		if(verbose_dbg){
+			System.out.println("status TD:");
+			System.out.println(US.REF(statusGetDevDescriptor_TD));
+		}
 		empty_TD[2] = 0xF0000000;		// empty TD is always tail
 		empty_TD[3] = 0x00000000;
 		empty_TD[4] = 0x00000000;
@@ -272,17 +282,17 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		testED[2] = 0x00404000;			//set skip bit and mps 64byte
 		setupTest = new TransferDescriptor(TdType.SETUP, setupWholeDevDesc, 8);
 		OhciHcd.enqueueTd(setupTest);
-		System.out.println("setupTest addr:");
-		System.out.println(setupTest.getTdAddress());
+//		System.out.println("setupTest addr:");
+//		System.out.println(setupTest.getTdAddress());
 		dataWholeDevDesc = new byte[18];
 		dataTest = new TransferDescriptor(TdType.IN, dataWholeDevDesc, 18);
+//		System.out.println("dataTest addr:");
+//		System.out.println(dataTest.getTdAddress());
 		OhciHcd.enqueueTd(dataTest);
-		System.out.println("dataTest addr:");
-		System.out.println(dataTest.getTdAddress());
 		statusTest = new TransferDescriptor(TdType.STATUS_OUT, null, 0);
+//		System.out.println("statusTest addr:");
+//		System.out.println(statusTest.getTdAddress());
 		OhciHcd.enqueueTd(statusTest);
-		System.out.println("statusTest addr:");
-		System.out.println(statusTest.getTdAddress());
 		testED[2] = 0x00400000;			//clear skip bit mps 64byte
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 	}
@@ -334,15 +344,18 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	
 	public static void enqueueTd(TransferDescriptor td){
 //		testED[2] = 0x00084000;		// set skip bit -> Endpoint will be skiped
-				
-		System.out.println("enqueue:");
-		System.out.println(testED[3]);
-		System.out.println(testED[4]);
+		
 		if( (testED[3] & 0xFFFFFFF0 ) == (testED[4]  & 0xFFFFFFF0) ){		// tail == head pointer, no td in the list
 			System.out.println("list is empty.");
 			if( US.GET4(testED[4]) == 0xF0000000 ){			// head is empty dummy descriptor
 				System.out.println("head is empty descriptor");
 //				td.setNextTD( ((testED[4] & 0xFFFFFFF0)));	//TODO set nextTd in td
+				System.out.println("add as next for new td: ");
+				System.out.println( US.REF(empty_TD) + 8 );
+				System.out.println("add addr of new to testED[4]: ");
+				System.out.println(td.getTdAddress());
+				
+				
 				td.setNextTD( US.REF(empty_TD) + 8 );	// set nextTd in td
 				testED[4] = td.getTdAddress();				// set td as new head pointer
 				US.PUT4(USBHCCHEDR, td.getTdAddress());	//set Head ED for control transfer
@@ -355,10 +368,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			int nextTd = ((testED[4] & 0xFFFFFFF0) + 8);		// NextTD
 			System.out.println("testED[4]:");
 			System.out.println(testED[4]);
-			int lastTd = nextTd;
 			int nofSearches = 0;
 			while (US.GET4(US.GET4(nextTd)) != 0xF0000000 && (nofSearches < 2000) ){
-				lastTd = nextTd;
 				if(nextTd == 0x00000000){
 					System.out.println("next == null1");
 				}
@@ -395,8 +406,17 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 				}
 				
 				// add before empty TD
+				if(verbose_dbg){
+					System.out.println("add as next for new td: ");
+					System.out.println(US.GET4(nextTd));
+				}
 				td.setNextTD(US.GET4(nextTd));								// set old end td pointer as next td for new enqueued td
-				US.PUT4((US.GET4(lastTd) + 8), td.getTdAddress());			// set td next pointer
+				if(verbose_dbg){
+					System.out.println("add addr of new to Td:");
+					System.out.println("nextTd:");
+					System.out.println(nextTd);
+				}
+				US.PUT4(nextTd, td.getTdAddress());			// set td next pointer
 			}			
 		}
 		
@@ -465,9 +485,10 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		testED[3] = (US.REF(empty_TD) + 8);// << 4);	// TD Queue Tail pointer
 		testED[4] = (US.REF(empty_TD) + 8);// << 4);	// TD Queue Head pointer
 		testED[5] = (US.REF(testED) + 8);//0x00000000;		// no next endpoint
-		System.out.println("testED: ");
-		System.out.println(US.REF(testED));
-		
+		if(verbose_dbg){
+			System.out.println("testED: ");
+			System.out.println(US.REF(testED));
+		}
 		empty_TD[2] = 0xF0000000;
 		empty_TD[3] = 0x00000000;
 		empty_TD[4] = 0x00000000;
@@ -477,8 +498,10 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		testED_empty[3] = 0;
 		testED_empty[4] = 0;
 		testED_empty[5] = 0;
-		System.out.println("testED_empty: ");
-		System.out.println(US.REF(testED_empty));
+		if(verbose_dbg){
+			System.out.println("testED_empty: ");
+			System.out.println(US.REF(testED_empty));
+		}
 		
 		bulkEDQueue_empty[2] = 0;
 		bulkEDQueue_empty[3] = 0;
@@ -559,11 +582,15 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 //		US.PUT4(USBHCBHEDR, US.REF(bulkEDQueue_empty));		//set ED for bulk transfer
 		
 		// 4) Set up HC registers and HC Communications Area
-		System.out.println("Addr HCCA: ");
-		System.out.println(US.REF(hcca));
+		if(verbose_dbg){
+			System.out.println("Addr HCCA: ");
+			System.out.println(US.REF(hcca));
+		}
 		US.PUT4(USBHCHCCAR, (US.REF(hcca) + 28));			// set pointer to HCCA
-		System.out.println("Addr Done: ");
-		System.out.println(US.REF(doneList));
+		if(verbose_dbg){
+			System.out.println("Addr Done: ");
+			System.out.println(US.REF(doneList));
+		}
 		US.PUT4(USBHCDHR, (US.REF(doneList) + 8));		// memory for done head
 				
 		periodicReInit();
