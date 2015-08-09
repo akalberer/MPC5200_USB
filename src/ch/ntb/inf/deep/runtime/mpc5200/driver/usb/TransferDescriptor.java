@@ -94,6 +94,8 @@ public class TransferDescriptor {
 		if( ((transferDescriptor[2] & 0xF0000000) == 0xA0000000) || ((transferDescriptor[2] & 0xF0000000) == 0xB0000000)){
 			return false;
 		}
-		throw new UsbException("Error on ControlTransfer");
+		return false;
+		//TODO improve error handling -> check with done list, could be possible that one read could occur to not finished td
+//		throw new UsbException("Error on ControlTransfer");
 	}
 }
