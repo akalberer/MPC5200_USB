@@ -194,7 +194,6 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 		
 		while( !getDevDescEnum.controlDone() );		// wait for dev descriptor read
-		//TODO -> write mps to endpoint
 		
 		setUsbAddress = new UsbRequest();
 		setUsbAddress.setAddress(1);
@@ -203,7 +202,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		//then switch address of usb dev in endpoint
 		controlEndpointDesc.setUsbDevAddress(1);
 		
-		controlEndpointDesc.setMaxPacketSize(64);		//set skip bit and mps 64byte -> TODO read from data above
+		controlEndpointDesc.setMaxPacketSize(dataEnumDevDesc[7]);		//set skip bit and mps 64byte -> TODO read from data above
 		controlEndpointDesc.setSkipBit();
 		devDesc = new byte[18];
 		getDevDesc = new UsbRequest();

@@ -85,7 +85,7 @@ public class UsbRequest {
 		OhciHcd.enqueueTd(statusTd);
 	}
 	
-	public boolean controlDone(){
+	public boolean controlDone() throws UsbException{
 		if(statusTd.done()){
 			return true;
 		}

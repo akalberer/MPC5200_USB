@@ -1,5 +1,6 @@
 package ch.ntb.inf.deep.runtime.mpc5200.driver.usb;
 
+import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.exceptions.UsbException;
 import ch.ntb.inf.deep.unsafe.US;
 
 public class TransferDescriptor {
@@ -82,10 +83,17 @@ public class TransferDescriptor {
 		return (US.REF(transferDescriptor) + 8);
 	}
 	
-	public boolean done(){
+	public boolean done() throws UsbException{
 		if( (transferDescriptor[2] & 0xF0000000) == 0){
 			return true;
 		}
-		return false;
+		if( (transferDescriptor[2] & 0xF0000000) == 0xF0000000){
+			return false;
+		}
+		// reserved condition codes
+		if( ((transferDescriptor[2] & 0xF0000000) == 0xA0000000) || ((transferDescriptor[2] & 0xF0000000) == 0xB0000000)){
+			return false;
+		}
+		throw new UsbException("Error on ControlTransfer");
 	}
 }
