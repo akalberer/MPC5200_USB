@@ -24,6 +24,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	private static UsbRequest getDevDesc;
 	private static TransferDescriptor emptyTD;
 	private static int[] doneList;
+	private static UsbRequest setUsbAddress;
 	
 	private static boolean dataToggleControl = true; 		/** false: DATA0; true: DATA1 */
 	
@@ -195,10 +196,12 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		while( !getDevDescEnum.controlDone() );		// wait for dev descriptor read
 		//TODO -> write mps to endpoint
 		
+		setUsbAddress = new UsbRequest();
+		setUsbAddress.setAddress(1);
+		while( !setUsbAddress.controlDone() );		// wait for finish of set address
 		
-		//TODO dequeue tds from list, now just for testing of td enqueue!!
-		currentTime = Kernel.time();
-		while(Kernel.time() - currentTime < 10000);		// wait 10ms so that first getDevDescriptor can finish
+		//then switch address of usb dev in endpoint
+		controlEndpointDesc.setUsbDevAddress(1);
 		
 		controlEndpointDesc.setMaxPacketSize(64);		//set skip bit and mps 64byte -> TODO read from data above
 		controlEndpointDesc.setSkipBit();
@@ -390,8 +393,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		controlEndpointDesc.setTdHeadPointer(emptyTD.getTdAddress());		// TD Queue Head pointer
 		controlEndpointDesc.setNextEndpointDescriptor(controlEndpointDesc.getEndpointDescriptorAddress());		// no next endpoint
 		if(verbose_dbg){
-			System.out.println("testED: ");
-			System.out.println(US.REF(controlEndpointDesc));
+			System.out.println("controlEP address: ");
+			System.out.println(controlEndpointDesc.getEndpointDescriptorAddress());
 		}
 				
 		// 3) load driver, take control of host controller

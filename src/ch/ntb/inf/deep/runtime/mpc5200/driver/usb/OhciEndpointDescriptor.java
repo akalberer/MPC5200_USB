@@ -57,6 +57,15 @@ public class OhciEndpointDescriptor {
 		setSkipBit(false);
 	}
 	
+	public void setUsbDevAddress(int address) throws UsbException{
+		if(address > 127 || address <= 0){
+			throw new UsbException("wrong usb address.");
+		}
+		
+		endpointDesc[2] &= ~0x0000007F;		// clear current usb device address
+		endpointDesc[2] |= address;			// set new address
+	}
+	
 	public void setTdTailPointer(int address){
 		endpointDesc[3] = address;
 	}
