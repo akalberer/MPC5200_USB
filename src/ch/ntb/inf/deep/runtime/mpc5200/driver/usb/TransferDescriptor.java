@@ -39,7 +39,6 @@ public class TransferDescriptor {
 	public TransferDescriptor(TdType type, byte[] buffer, int length){
 		this(type);
 		if(buffer == null){				// no data buffer
-			System.out.println("set no data buffer");
 			setEmptyUserBufferPointer();
 		}
 		else{

@@ -5,9 +5,12 @@ import ch.ntb.inf.deep.runtime.ppc32.Task;
 
 public class OhciDevice extends Task{
 
-	private static boolean init = false;
+	private static boolean init = true;
 	private static boolean initDone = false;
 	private static boolean done = false;
+	
+	private static UsbRequest setConfig;
+	private static UsbRequest setInterface;
 	
 	public void action(){
 		if(init){
@@ -39,13 +42,13 @@ public class OhciDevice extends Task{
 		}
 	}
 	
-	public static void init(){
-		init = true;
-	}
-	
-
-	public static void open(int cfgValue, int ifaceNum, int altSetting) {
+	public static void open(int cfgValue, int ifaceNum, int altSetting) throws UsbException{
+		setConfig = new UsbRequest();
+		setInterface = new UsbRequest();
 		
+		setConfig.setConfiguration(cfgValue);
+		//TODO leave set interface out
+//		setInterface.setInterface(ifaceNum, altSetting);
 	}
 	
 	static{

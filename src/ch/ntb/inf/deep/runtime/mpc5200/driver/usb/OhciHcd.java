@@ -26,6 +26,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	private static int[] doneList;
 	private static UsbRequest setUsbAddress;
 	
+	private static boolean initDone = false;
+	
 	private static boolean dataToggleControl = true; 		/** false: DATA0; true: DATA1 */
 	
 	private static OhciState state;
@@ -217,10 +219,16 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		}while(	(US.GET4(USBHCFNR) < portResetFrameNumDone) && nofResets > 0);
 	}
 	
+	public static boolean initDone(){
+		return initDone;
+	}
 	
 	public static void enumerateDevice() throws UsbException{
 		long currentTime = Kernel.time();
 		while(Kernel.time() - currentTime < 10000); // wait 10ms after reset
+		
+		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|OHCI_INTR_SF));
+		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)| OHCI_SCHED_ENABLES));	// activate list processing
 		
 		controlEndpointDesc.setSkipBit();		// set skip bit
 		controlEndpointDesc.setTdTailPointer(emptyTD.getTdAddress());		// TD Queue Tail pointer
@@ -232,9 +240,6 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		getDevDescEnum.getDeviceDescriptorEnumeration(dataEnumDevDesc);
 		
 		controlEndpointDesc.clearSkipBit();			//clear skip bit
-		
-		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|OHCI_INTR_SF));
-		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)| OHCI_SCHED_ENABLES));	// activate list processing -> crashes processor!?
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 		
 		while( !getDevDescEnum.controlDone() );		// wait for dev descriptor read
@@ -251,7 +256,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		devDesc = new byte[18];
 		getDevDesc = new UsbRequest();
 		getDevDesc.getDeviceDescriptor(devDesc);
-		controlEndpointDesc.clearSkipBit();				// clear skip bit
+		controlEndpointDesc.clearSkipBit();						// clear skip bit
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 	}
 	
@@ -260,11 +265,20 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		state = OhciState.OHCI_RH_HALTED;
 	}
 	
+	public static void skipControlEndpoint(){
+		controlEndpointDesc.setSkipBit();
+	}
+	
+	public static void resumeControlEndpoint(){
+		controlEndpointDesc.clearSkipBit();
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));		// set control list filled
+	}
+	
 	public static void enqueueTd(TransferDescriptor td){
 //		testED[2] = 0x00084000;		// set skip bit -> Endpoint will be skiped
 		
 		if( controlEndpointDesc.getTdHeadPointer() == controlEndpointDesc.getTdTailPointer() ){		// head == tail pointer, no td in the list
-			System.out.println("list is empty.");
+//			System.out.println("list is empty.");
 			if( US.GET4(controlEndpointDesc.getTdHeadPointer()) == 0xF0000000 ){			// head is empty dummy descriptor
 				if(verbose_dbg){
 					System.out.println("head is empty descriptor");
@@ -279,7 +293,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			}
 		}
 		else{				// already TD's in list
-			System.out.println("already TD in list");
+//			System.out.println("already TD in list");
 			if( US.GET4(controlEndpointDesc.getTdHeadPointer()) == 0xF0000000 ){
 				System.out.println("head is empty desc");
 			}
@@ -311,7 +325,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 //						System.out.println("last was setup");
 //					}
 //					else{			// read toggle from last td
-						System.out.println("toggle:");
+//						System.out.println("toggle:");
 //						if( (US.GET4(US.GET4(lastTd)) & 0x0F000000) == 0x03000000){	
 						if(!dataToggleControl){
 							td.setDataToggle(false);
@@ -325,16 +339,16 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 				}
 				
 				// add before empty TD
-				if(verbose_dbg){
-					System.out.println("add as next for new td: ");
+//				if(verbose_dbg){
+					System.out.println("next for new td: ");
 					System.out.println(US.GET4(nextTd));
-				}
+//				}
 				td.setNextTD(US.GET4(nextTd));								// set old end td pointer as next td for new enqueued td
-				if(verbose_dbg){
-					System.out.println("add addr of new to Td:");
-					System.out.println("nextTd:");
+//				if(verbose_dbg){
+//					System.out.println("add addr of new to Td:");
+//					System.out.println("nextTd:");
 					System.out.println(nextTd);
-				}
+//				}
 				US.PUT4(nextTd, td.getTdAddress());			// set td next pointer
 			}			
 		}
@@ -519,6 +533,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			// enumerate device
 			enumerateDevice();
 		}
+		
+		initDone = true;
 	}
 
 	static{

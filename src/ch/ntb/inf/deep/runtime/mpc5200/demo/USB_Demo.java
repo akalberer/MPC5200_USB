@@ -4,6 +4,7 @@ import java.io.PrintStream;
 
 import ch.ntb.inf.deep.runtime.mpc5200.driver.UART3;
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.Device;
+import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.OhciHcd;
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.exceptions.UsbException;
 import ch.ntb.inf.deep.runtime.ppc32.Task;
 
@@ -15,8 +16,17 @@ public class USB_Demo extends Task{
 	public void action(){
 		if(!initDone){
 			usbDev = new Device();
-			usbDev.init();
-			initDone = true;
+			if(OhciHcd.initDone()){
+				initDone = true;
+			}
+		}
+		if(initDone && !usbDev.isOpen() ){
+			try {
+				usbDev.open(1, 0, 1);
+			} catch (UsbException e) {
+				System.out.println("USB dev open failed.");
+				e.printStackTrace();
+			}
 		}
 	}
 	
