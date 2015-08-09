@@ -175,40 +175,6 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			throw new UsbException("HC died, detected by ISR");	//TODO improve error handling
 		}
 		
-		long currentTime = Kernel.time();
-		while(Kernel.time() - currentTime < 10000); // wait 10ms after reset
-		
-		controlEndpointDesc.setSkipBit();		// set skip bit
-		controlEndpointDesc.setTdTailPointer(emptyTD.getTdAddress());		// TD Queue Tail pointer
-		controlEndpointDesc.setTdHeadPointer(emptyTD.getTdAddress());		// TD Queue Head pointer
-		controlEndpointDesc.setNextEndpointDescriptor(controlEndpointDesc.getEndpointDescriptorAddress());		// no next endpoint
-
-		dataEnumDevDesc = new byte[8];
-		getDevDescEnum = new UsbRequest();
-		getDevDescEnum.getDeviceDescriptorEnumeration(dataEnumDevDesc);
-		
-		controlEndpointDesc.clearSkipBit();			//clear skip bit
-		
-		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|OHCI_INTR_SF));
-		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)| OHCI_SCHED_ENABLES));	// activate list processing -> crashes processor!?
-		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
-		
-		while( !getDevDescEnum.controlDone() );		// wait for dev descriptor read
-		
-		setUsbAddress = new UsbRequest();
-		setUsbAddress.setAddress(1);
-		while( !setUsbAddress.controlDone() );		// wait for finish of set address
-		
-		//then switch address of usb dev in endpoint
-		controlEndpointDesc.setUsbDevAddress(1);
-		
-		controlEndpointDesc.setMaxPacketSize(dataEnumDevDesc[7]);		//set skip bit and mps 64byte -> TODO read from data above
-		controlEndpointDesc.setSkipBit();
-		devDesc = new byte[18];
-		getDevDesc = new UsbRequest();
-		getDevDesc.getDeviceDescriptor(devDesc);
-		controlEndpointDesc.clearSkipBit();				// clear skip bit
-		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 	}
 	
 	/**
@@ -249,6 +215,44 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			
 			nofResets--;	// max 6 resets with 10ms -> decrement			
 		}while(	(US.GET4(USBHCFNR) < portResetFrameNumDone) && nofResets > 0);
+	}
+	
+	
+	public static void enumerateDevice() throws UsbException{
+		long currentTime = Kernel.time();
+		while(Kernel.time() - currentTime < 10000); // wait 10ms after reset
+		
+		controlEndpointDesc.setSkipBit();		// set skip bit
+		controlEndpointDesc.setTdTailPointer(emptyTD.getTdAddress());		// TD Queue Tail pointer
+		controlEndpointDesc.setTdHeadPointer(emptyTD.getTdAddress());		// TD Queue Head pointer
+		controlEndpointDesc.setNextEndpointDescriptor(controlEndpointDesc.getEndpointDescriptorAddress());		// no next endpoint
+
+		dataEnumDevDesc = new byte[8];
+		getDevDescEnum = new UsbRequest();
+		getDevDescEnum.getDeviceDescriptorEnumeration(dataEnumDevDesc);
+		
+		controlEndpointDesc.clearSkipBit();			//clear skip bit
+		
+		US.PUT4(USBHCIER, (US.GET4(USBHCIER)|OHCI_INTR_SF));
+		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)| OHCI_SCHED_ENABLES));	// activate list processing -> crashes processor!?
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
+		
+		while( !getDevDescEnum.controlDone() );		// wait for dev descriptor read
+		
+		setUsbAddress = new UsbRequest();
+		setUsbAddress.setAddress(1);
+		while( !setUsbAddress.controlDone() );		// wait for finish of set address
+		
+		//then switch address of usb dev in endpoint
+		controlEndpointDesc.setUsbDevAddress(1);
+		
+		controlEndpointDesc.setMaxPacketSize(dataEnumDevDesc[7]);		//set skip bit and mps 64byte -> TODO read from data above
+		controlEndpointDesc.setSkipBit();
+		devDesc = new byte[18];
+		getDevDesc = new UsbRequest();
+		getDevDesc.getDeviceDescriptor(devDesc);
+		controlEndpointDesc.clearSkipBit();				// clear skip bit
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 	}
 	
 	private static void ohci_hcd_reset(){
@@ -507,8 +511,16 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 
 		delay = ((US.GET4(USBHCRHDRA) & 0xFF000000) >> 23) * 1000;	// wait -> POTPGT * 2 (in 2ms unit) delay after powering hub
 		while(Kernel.time() - currentTime < delay);					// give USB device 100ms time to set up
+		
+		if( (US.GET4(USBHCRHP1SR) & RH_PS_CCS) != 0){ 		// device connected
+			// reset signaling on port
+			resetRootHub();
+			
+			// enumerate device
+			enumerateDevice();
+		}
 	}
-	
+
 	static{
 						
 		US.PUT4(GPWER, US.GET4(GPWER) | 0x80000000);	// enable GPIO use
