@@ -97,4 +97,12 @@ public class TransferDescriptor {
 		//TODO improve error handling -> check with done list, could be possible that one read could occur to not finished td
 //		throw new UsbException("Error on ControlTransfer");
 	}
+	
+	public void setBufferRounding(){
+		transferDescriptor[2] |= (1 << 18);
+	}
+	
+	public void clearBufferRounding(){
+		transferDescriptor[2] &= ~(1 << 18);
+	}
 }

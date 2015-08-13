@@ -149,18 +149,22 @@ public class UsbRequest {
 	}
 	
 	public void bulkTransfer(int endpoint, TransferDirection dir, byte[] data, int dataLength) throws UsbException{
-		OhciHcd.skipBulkEndpointOut();
 		if(dir == TransferDirection.IN){
+			OhciHcd.skipBulkEndpointIn();
 			dataTd = new TransferDescriptor(TdType.IN, data, dataLength);
+			dataTd.setBufferRounding();
+			OhciHcd.enqueueTd(EndpointType.BULK_IN, dataTd);
+			OhciHcd.resumeBulkEndpointIn();
 		}
 		else if(dir == TransferDirection.OUT){
+			OhciHcd.skipBulkEndpointOut();
 			dataTd = new TransferDescriptor(TdType.OUT, data, dataLength);
 			OhciHcd.enqueueTd(EndpointType.BULK_OUT, dataTd);
+			OhciHcd.resumeBulkEndpointOut();
 		}
 		else{
 			throw new UsbException("invalid parameter in bulk transfer.");
 		}
-		OhciHcd.resumeBulkEndpointOut();
 	}
 	
 	public boolean controlDone() throws UsbException{

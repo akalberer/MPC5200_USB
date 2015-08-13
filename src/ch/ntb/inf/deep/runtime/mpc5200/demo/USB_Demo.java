@@ -14,7 +14,9 @@ public class USB_Demo extends Task{
 	private Device usbDev;
 	private boolean initDone = false;
 	private boolean writeDone = false;
-	private byte[] testData = new byte[]{(byte)0x41, (byte)0x42, (byte)0x43, (byte)0x30};
+	private static byte[] testData = new byte[]{(byte)0x41, (byte)0x42, (byte)0x43, (byte)0x30};
+	private static byte[] testData2 = new byte[]{(byte)0x30, (byte)0x31, (byte)0x32, (byte)0x0D, (byte)0x0A};
+	private static byte[] readData;
 	
 	public void action(){
 		if(!initDone){
@@ -32,13 +34,22 @@ public class USB_Demo extends Task{
 			}
 		}
 		if(initDone && usbDev.isOpen() && !writeDone){
-			try{
-				usbDev.bulkTransfer(2, TransferDirection.OUT, testData, testData.length);
+//			try{
+//				usbDev.bulkTransfer(2, TransferDirection.OUT, testData2, testData2.length);
 				writeDone = true;
+//			}
+//			catch (UsbException e){
+//				System.out.println("Bulk transfer failed.");
+//				e.printStackTrace();
+//			}
+		}
+		if(initDone && usbDev.isOpen() && writeDone && (nofActivations % 2000 == 0)){
+			try{
+//				usbDev.bulkTransfer(1, TransferDirection.IN, readData, readData.length);
+				usbDev.bulkTransfer(2, TransferDirection.OUT, testData2, testData2.length);
 			}
-			catch (UsbException e){
-				System.out.println("Bulk transfer failed.");
-				e.printStackTrace();
+			catch(UsbException e){
+				System.out.println("Bulk in failed");
 			}
 		}
 	}
@@ -58,5 +69,7 @@ public class USB_Demo extends Task{
 		Task t = new USB_Demo();
 		t.period = 1;
 		Task.install(t);
+		
+		readData = new byte[8];
 	}
 }

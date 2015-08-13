@@ -77,8 +77,12 @@ public class OhciEndpointDescriptor {
 		if(endpoint < 0 || endpoint > 0xF){
 			throw new UsbException("invalid endpoint.");
 		}
-		endpointDesc[2] &= ~0x00000710;		// clear current endpoint number
+		endpointDesc[2] &= ~0x00000780;		// clear current endpoint number
 		endpointDesc[2] |= (endpoint << 7);	// set new endpoint number
+	}
+	
+	public int getEndpoint(){
+		return ((endpointDesc[2] & 0x00000780) >> 7);
 	}
 	
 	public void setTdTailPointer(int address){
