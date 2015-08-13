@@ -6,17 +6,23 @@ import ch.ntb.inf.deep.unsafe.US;
 public class OhciEndpointDescriptor {
 	
 	private int[] endpointDesc;
+	private EndpointType epType;
 	
-	public OhciEndpointDescriptor(){
+	private static int usbDevAddress = 0;		// address of USB-Device after enumeration
+	
+	public OhciEndpointDescriptor(EndpointType epType){
 		this.endpointDesc = new int[6];
+		this.epType = epType;
 	}
 	
-	public OhciEndpointDescriptor(int maxPacketSize) throws UsbException{
-		this();
-		setMaxPacketSize(maxPacketSize);
+	public OhciEndpointDescriptor(EndpointType epType, int maxPacketSize) throws UsbException{
+		this(epType);
+		
 		for(int i = 0; i < endpointDesc.length; i++){		// just for paranoia
 			endpointDesc[i] = 0;
 		}
+		
+		setMaxPacketSize(maxPacketSize);
 	}
 	
 	/**
@@ -64,6 +70,15 @@ public class OhciEndpointDescriptor {
 		
 		endpointDesc[2] &= ~0x0000007F;		// clear current usb device address
 		endpointDesc[2] |= address;			// set new address
+		usbDevAddress = address;
+	}
+	
+	public void setEndpoint(int endpoint) throws UsbException{
+		if(endpoint < 0 || endpoint > 0xF){
+			throw new UsbException("invalid endpoint.");
+		}
+		endpointDesc[2] &= ~0x00000710;		// clear current endpoint number
+		endpointDesc[2] |= (endpoint << 7);	// set new endpoint number
 	}
 	
 	public void setTdTailPointer(int address){

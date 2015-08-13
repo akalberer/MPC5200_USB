@@ -6,6 +6,7 @@ import ch.ntb.inf.deep.runtime.ppc32.Task;
 public class Device extends Task{
 	
 	private boolean open = false;
+	private UsbRequest usbReq;
 	
 	public Device(){
 		
@@ -22,5 +23,15 @@ public class Device extends Task{
 	
 	public boolean isOpen(){
 		return open;
+	}
+	
+	public void bulkTransfer(int endpointNumber, TransferDirection dir, byte[] data, int dataLength) throws UsbException{
+		if(open){
+			usbReq = new UsbRequest();
+			OhciDevice.bulkTransfer(usbReq, endpointNumber, dir, data, dataLength);
+		}
+		else{
+			throw new UsbException("USB Device is not open!");
+		}
 	}
 }

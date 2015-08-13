@@ -18,17 +18,22 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	private static byte[] hcca;
 	private static final int HCCA_SIZE = 263;	//256 + 7 
 	private static OhciEndpointDescriptor controlEndpointDesc;
+	private static OhciEndpointDescriptor bulkEndpointOutDesc;
+	private static OhciEndpointDescriptor bulkEndpointInDesc;
 	private static UsbRequest getDevDescEnum;
 	private static byte[] dataEnumDevDesc;
 	private static byte[] devDesc;
 	private static UsbRequest getDevDesc;
-	private static TransferDescriptor emptyTD;
+	private static TransferDescriptor emptyControlTD;
+	private static TransferDescriptor emptyBulkOutTD;
 	private static int[] doneList;
 	private static UsbRequest setUsbAddress;
+	private static final int usbDevAddress = 1;
 	
 	private static boolean initDone = false;
 	
 	private static boolean dataToggleControl = true; 		/** false: DATA0; true: DATA1 */
+	private static boolean dataToggleBulk = false;
 	
 	private static OhciState state;
 	private static boolean intHalted = false;		// flag to detect if HC was halted due to interrupt
@@ -49,7 +54,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	public static final int OHCI_CTRL_RWC = 0x00000200;		// remote wakeup connected
 	public static final int OHCI_CTRL_CBSR = 0x00000003;	// control/bulk service ratio
 	
-	public static final int OHCI_SCHED_ENABLES = (OHCI_CTRL_CLE); //| OHCI_CTRL_PLE);//| OHCI_CTRL_BLE | OHCI_CTRL_PLE | OHCI_CTRL_IE);
+	public static final int OHCI_SCHED_ENABLES = (OHCI_CTRL_CLE | OHCI_CTRL_BLE); //| OHCI_CTRL_PLE | OHCI_CTRL_IE);
 	public static final int OHCI_CONTROL_INIT = OHCI_CTRL_CBSR;
 	
 	/**
@@ -231,15 +236,15 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)| OHCI_SCHED_ENABLES));	// activate list processing
 		
 		controlEndpointDesc.setSkipBit();		// set skip bit
-		controlEndpointDesc.setTdTailPointer(emptyTD.getTdAddress());		// TD Queue Tail pointer
-		controlEndpointDesc.setTdHeadPointer(emptyTD.getTdAddress());		// TD Queue Head pointer
+		controlEndpointDesc.setTdTailPointer(emptyControlTD.getTdAddress());		// TD Queue Tail pointer
+		controlEndpointDesc.setTdHeadPointer(emptyControlTD.getTdAddress());		// TD Queue Head pointer
 		controlEndpointDesc.setNextEndpointDescriptor(controlEndpointDesc.getEndpointDescriptorAddress());		// no next endpoint
-
+		controlEndpointDesc.clearSkipBit();			//clear skip bit
+		
 		dataEnumDevDesc = new byte[8];
 		getDevDescEnum = new UsbRequest();
 		getDevDescEnum.getDeviceDescriptorEnumeration(dataEnumDevDesc);
 		
-		controlEndpointDesc.clearSkipBit();			//clear skip bit
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 		
 		while( !getDevDescEnum.controlDone() );		// wait for dev descriptor read
@@ -249,15 +254,22 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		while( !setUsbAddress.controlDone() );		// wait for finish of set address
 		
 		//then switch address of usb dev in endpoint
-		controlEndpointDesc.setUsbDevAddress(1);
+		controlEndpointDesc.setUsbDevAddress(usbDevAddress);
+		bulkEndpointOutDesc.setUsbDevAddress(usbDevAddress);
 		
 		controlEndpointDesc.setMaxPacketSize(dataEnumDevDesc[7]);		//set skip bit and mps 64byte -> TODO read from data above
-		controlEndpointDesc.setSkipBit();
 		devDesc = new byte[18];
 		getDevDesc = new UsbRequest();
 		getDevDesc.getDeviceDescriptor(devDesc);
-		controlEndpointDesc.clearSkipBit();						// clear skip bit
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
+	}
+	
+	public static void setControlListFilled(){
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
+	}
+	
+	public static void setBulkListFilled(){
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_BLF));	// set bulk list filled
 	}
 	
 	private static void ohci_hcd_reset(){
@@ -271,90 +283,209 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	
 	public static void resumeControlEndpoint(){
 		controlEndpointDesc.clearSkipBit();
-		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));		// set control list filled
+		setControlListFilled();		// set control list filled
 	}
 	
-	public static void enqueueTd(TransferDescriptor td){
-//		testED[2] = 0x00084000;		// set skip bit -> Endpoint will be skiped
-		
-		if( controlEndpointDesc.getTdHeadPointer() == controlEndpointDesc.getTdTailPointer() ){		// head == tail pointer, no td in the list
-//			System.out.println("list is empty.");
-			if( US.GET4(controlEndpointDesc.getTdHeadPointer()) == 0xF0000000 ){			// head is empty dummy descriptor
-				if(verbose_dbg){
-					System.out.println("head is empty descriptor");
-					System.out.println("add as next for new td: ");
-					System.out.println(emptyTD.getTdAddress() );
-					System.out.println("add addr of new to testED[4]: ");
-					System.out.println(td.getTdAddress());
-				}				
-				td.setNextTD(emptyTD.getTdAddress());	// set nextTd in td
-				controlEndpointDesc.setTdHeadPointer(td.getTdAddress());				// set td as new head pointer
-				US.PUT4(USBHCCHEDR, controlEndpointDesc.getEndpointDescriptorAddress());	//set Head ED for control transfer
-			}
-		}
-		else{				// already TD's in list
-//			System.out.println("already TD in list");
-			if( US.GET4(controlEndpointDesc.getTdHeadPointer()) == 0xF0000000 ){
-				System.out.println("head is empty desc");
-			}
-			// find last td before empty dummy descriptor, start at head pointer
-			int nextTd = ((controlEndpointDesc.getTdHeadPointer()) + 8);		// NextTD
-			int nofSearches = 0;
-			if(US.GET4(nextTd) != 0xF0000000){		// check if not just one element in list
-				while ((US.GET4(US.GET4(nextTd)) != 0xF0000000) && (nofSearches < 2000) ){
-					if(nextTd == 0x00000000){
-						System.out.println("next == null1");
+	public static void skipBulkEndpointOut(){
+		bulkEndpointOutDesc.setSkipBit();
+	}
+	
+	public static void resumeBulkEndpointOut(){
+		bulkEndpointOutDesc.clearSkipBit();
+		System.out.println("BulkEndpointOut MPS: ");
+		System.out.println(bulkEndpointOutDesc.getMaxPacketSize());
+		setBulkListFilled();
+	}
+	
+	public static void skipBulkEndpointIn(){
+		bulkEndpointInDesc.setSkipBit();
+	}
+	
+	public static void resumeBulkEndpointIn(){
+		bulkEndpointInDesc.clearSkipBit();
+		setBulkListFilled();
+	}
+	
+	public static void enqueueTd(EndpointType epType, TransferDescriptor td){
+
+		switch(epType){
+			case CONTROL:
+				//		testED[2] = 0x00084000;		// set skip bit -> Endpoint will be skiped
+	
+				if( controlEndpointDesc.getTdHeadPointer() == controlEndpointDesc.getTdTailPointer() ){		// head == tail pointer, no td in the list
+					//			System.out.println("list is empty.");
+					if( US.GET4(controlEndpointDesc.getTdHeadPointer()) == 0xF0000000 ){			// head is empty dummy descriptor
+						if(verbose_dbg){
+							System.out.println("head is empty descriptor");
+							System.out.println("add as next for new td: ");
+							System.out.println(emptyControlTD.getTdAddress() );
+							System.out.println("add addr of new to testED[4]: ");
+							System.out.println(td.getTdAddress());
+						}				
+						td.setNextTD(emptyControlTD.getTdAddress());	// set nextTd in td
+						controlEndpointDesc.setTdHeadPointer(td.getTdAddress());				// set td as new head pointer
+						US.PUT4(USBHCCHEDR, controlEndpointDesc.getEndpointDescriptorAddress());	//set Head ED for control transfer
 					}
-					nextTd = (US.GET4(nextTd) + 8);			// NextTD field in TransferDescriptor
-					if(nextTd == 0x00000000){
-						System.out.println("next == null2");
-					}
-					nofSearches++;
 				}
-			}
-			
-			if(nofSearches >= 2000){
-				System.out.println("Search of TDs failed");
-				return;		//TODO look if it works and remove this or throw exception
-			}
-			else{
-				if( (td.getType() == TdType.IN) ||  (td.getType()== TdType.OUT)){
-					// read data toggle from endpoint descriptor
-//					if((US.GET4(US.GET4(lastTd)) & 0x00180000) == 0){	// last td was setup -> DATA1
-//						td.setDataToggle(true);
-//						System.out.println("last was setup");
-//					}
-//					else{			// read toggle from last td
-//						System.out.println("toggle:");
-//						if( (US.GET4(US.GET4(lastTd)) & 0x0F000000) == 0x03000000){	
-						if(!dataToggleControl){
-							td.setDataToggle(false);
-							dataToggleControl = false;
+				else{				// already TD's in list
+					//			System.out.println("already TD in list");
+					if( US.GET4(controlEndpointDesc.getTdHeadPointer()) == 0xF0000000 ){
+						System.out.println("head is empty desc");
+					}
+					// find last td before empty dummy descriptor, start at head pointer
+					int nextTd = ((controlEndpointDesc.getTdHeadPointer()) + 8);		// NextTD
+					int nofSearches = 0;
+					if(US.GET4(nextTd) != 0xF0000000){		// check if not just one element in list
+						while ((US.GET4(US.GET4(nextTd)) != 0xF0000000) && (nofSearches < 2000) ){
+							if(nextTd == 0x00000000){
+								System.out.println("next == null1");
+							}
+							nextTd = (US.GET4(nextTd) + 8);			// NextTD field in TransferDescriptor
+							if(nextTd == 0x00000000){
+								System.out.println("next == null2");
+							}
+							nofSearches++;
 						}
-						else{
-							td.setDataToggle(true);
-							dataToggleControl = true;
+					}
+	
+					if(nofSearches >= 2000){
+						System.out.println("Search of TDs failed");
+						return;		//TODO look if it works and remove this or throw exception
+					}
+					else{
+						if( (td.getType() == TdType.IN) ||  (td.getType()== TdType.OUT)){
+							// read data toggle from endpoint descriptor
+							//					if((US.GET4(US.GET4(lastTd)) & 0x00180000) == 0){	// last td was setup -> DATA1
+							//						td.setDataToggle(true);
+							//						System.out.println("last was setup");
+							//					}
+							//					else{			// read toggle from last td
+							//						System.out.println("toggle:");
+							//						if( (US.GET4(US.GET4(lastTd)) & 0x0F000000) == 0x03000000){	
+							if(!dataToggleControl){
+								td.setDataToggle(false);
+								dataToggleControl = false;
+							}
+							else{
+								td.setDataToggle(true);
+								dataToggleControl = true;
+							}
+							//					}
 						}
-//					}
+	
+						// add before empty TD
+						//				if(verbose_dbg){
+						System.out.println("next for new td: ");
+						System.out.println(US.GET4(nextTd));
+						//				}
+						td.setNextTD(US.GET4(nextTd));								// set old end td pointer as next td for new enqueued td
+						//				if(verbose_dbg){
+						//					System.out.println("add addr of new to Td:");
+						//					System.out.println("nextTd:");
+						System.out.println(nextTd);
+						//				}
+						US.PUT4(nextTd, td.getTdAddress());			// set td next pointer
+					}
+				}
+				break;
+			case BULK_OUT:
+				if( bulkEndpointOutDesc.getTdHeadPointer() == bulkEndpointOutDesc.getTdTailPointer() ){		// head == tail pointer, no td in the list
+					//			System.out.println("list is empty.");
+					if( US.GET4(bulkEndpointOutDesc.getTdHeadPointer()) == 0xF0000000 ){			// head is empty dummy descriptor
+						if(verbose_dbg){
+							System.out.println("head is empty descriptor");
+							System.out.println("add as next for new td: ");
+							System.out.println(emptyBulkOutTD.getTdAddress() );
+							System.out.println("add addr of new to testED[4]: ");
+							System.out.println(td.getTdAddress());
+						}				
+						td.setNextTD(emptyBulkOutTD.getTdAddress());	// set nextTd in td
+						bulkEndpointOutDesc.setTdHeadPointer(td.getTdAddress());				// set td as new head pointer
+						US.PUT4(USBHCBHEDR, bulkEndpointOutDesc.getEndpointDescriptorAddress());	//set Head ED for bulk transfer
+					}
+				}
+				else{				// already TD's in list
+					//			System.out.println("already TD in list");
+					if( US.GET4(bulkEndpointOutDesc.getTdHeadPointer()) == 0xF0000000 ){
+						System.out.println("head is empty desc");
+					}
+					// find last td before empty dummy descriptor, start at head pointer
+					int nextTd = ((bulkEndpointOutDesc.getTdHeadPointer()) + 8);		// NextTD
+					int nofSearches = 0;
+					if(US.GET4(nextTd) != 0xF0000000){		// check if not just one element in list
+						while ((US.GET4(US.GET4(nextTd)) != 0xF0000000) && (nofSearches < 2000) ){
+							if(nextTd == 0x00000000){
+								System.out.println("next == null1");
+							}
+							nextTd = (US.GET4(nextTd) + 8);			// NextTD field in TransferDescriptor
+							if(nextTd == 0x00000000){
+								System.out.println("next == null2");
+							}
+							nofSearches++;
+						}
+					}
+	
+					if(nofSearches >= 2000){
+						System.out.println("Search of TDs failed");
+						return;		//TODO look if it works and remove this or throw exception
+					}
+					else{
+						if( (td.getType() == TdType.IN) ||  (td.getType()== TdType.OUT)){
+							// read data toggle from endpoint descriptor
+							//					if((US.GET4(US.GET4(lastTd)) & 0x00180000) == 0){	// last td was setup -> DATA1
+							//						td.setDataToggle(true);
+							//						System.out.println("last was setup");
+							//					}
+							//					else{			// read toggle from last td
+							//						System.out.println("toggle:");
+							//						if( (US.GET4(US.GET4(lastTd)) & 0x0F000000) == 0x03000000){	
+							if(!dataToggleBulk){
+								td.setDataToggle(false);
+								dataToggleBulk = false;
+							}
+							else{
+								td.setDataToggle(true);
+								dataToggleBulk = true;
+							}
+							//					}
+						}
+	
+						// add before empty TD
+						//				if(verbose_dbg){
+						System.out.println("next for new td: ");
+						System.out.println(US.GET4(nextTd));
+						//				}
+						td.setNextTD(US.GET4(nextTd));								// set old end td pointer as next td for new enqueued td
+						//				if(verbose_dbg){
+						//					System.out.println("add addr of new to Td:");
+						//					System.out.println("nextTd:");
+						System.out.println(nextTd);
+						//				}
+						US.PUT4(nextTd, td.getTdAddress());			// set td next pointer
+					}
 				}
 				
-				// add before empty TD
-//				if(verbose_dbg){
-					System.out.println("next for new td: ");
-					System.out.println(US.GET4(nextTd));
-//				}
-				td.setNextTD(US.GET4(nextTd));								// set old end td pointer as next td for new enqueued td
-//				if(verbose_dbg){
-//					System.out.println("add addr of new to Td:");
-//					System.out.println("nextTd:");
-					System.out.println(nextTd);
-//				}
-				US.PUT4(nextTd, td.getTdAddress());			// set td next pointer
-			}			
+				break;
+	
+			case ISOCHRONOUS:
+				break;
+			case INTERRUPT:
+				break;
+			default:
+				break;
 		}
 		
 //		testED[2] = 0x00080000;		// activate list processing
 //		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
+	}
+	
+	public static void setBulkEndpointNumber(int endpointNumber, TransferDirection dir) throws UsbException{
+		if(dir == TransferDirection.IN){
+			bulkEndpointInDesc.setEndpoint(endpointNumber);
+		}
+		else{
+			bulkEndpointOutDesc.setEndpoint(endpointNumber);
+		}
 	}
 	
 	private static void updateDoneList(){
@@ -399,21 +530,27 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		
 		//init structures
 		hcca = new byte[HCCA_SIZE];
-		controlEndpointDesc = new OhciEndpointDescriptor(8);
-		emptyTD = new TransferDescriptor(TdType.EMPTY);
+		controlEndpointDesc = new OhciEndpointDescriptor(EndpointType.CONTROL, 8);
+		bulkEndpointOutDesc = new OhciEndpointDescriptor(EndpointType.BULK_OUT, 64);
+		bulkEndpointInDesc = new OhciEndpointDescriptor(EndpointType.BULK_IN, 64);
+		emptyControlTD = new TransferDescriptor(TdType.EMPTY);
+		emptyBulkOutTD = new TransferDescriptor(TdType.EMPTY);
 		doneList = new int[512];
 		
 		//init first endpoints for testing !?
 		// 2) allocate and init any Host Controller structures, including HCCA block
 		controlEndpointDesc.setMaxPacketSize(8);		// max 8 Bytes first, Control Format -> F=0, speed full, direction from TD, endpoint 0, function address 0
-		controlEndpointDesc.setTdTailPointer(emptyTD.getTdAddress());		// TD Queue Tail pointer
-		controlEndpointDesc.setTdHeadPointer(emptyTD.getTdAddress());		// TD Queue Head pointer
+		controlEndpointDesc.setTdTailPointer(emptyControlTD.getTdAddress());		// TD Queue Tail pointer
+		controlEndpointDesc.setTdHeadPointer(emptyControlTD.getTdAddress());		// TD Queue Head pointer
 		controlEndpointDesc.setNextEndpointDescriptor(controlEndpointDesc.getEndpointDescriptorAddress());		// no next endpoint
 		if(verbose_dbg){
 			System.out.println("controlEP address: ");
 			System.out.println(controlEndpointDesc.getEndpointDescriptorAddress());
 		}
-				
+		bulkEndpointOutDesc.setTdTailPointer(emptyBulkOutTD.getTdAddress());
+		bulkEndpointOutDesc.setTdHeadPointer(emptyBulkOutTD.getTdAddress());
+		bulkEndpointOutDesc.setNextEndpointDescriptor(bulkEndpointOutDesc.getEndpointDescriptorAddress());
+		
 		// 3) load driver, take control of host controller
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) |(1 << OCR)) ); // set OwnershipChangeRequest
 		
@@ -481,7 +618,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		// now we're in the SUSPEND state ... must go OPERATIONAL within 2msec else HC enters RESUME
 
 		US.PUT4(USBHCCHEDR, controlEndpointDesc.getEndpointDescriptorAddress());				//set ED for control transfer
-//		US.PUT4(USBHCBHEDR, US.REF(bulkEDQueue_empty));		//set ED for bulk transfer
+		US.PUT4(USBHCBHEDR, bulkEndpointOutDesc.getEndpointDescriptorAddress());					//set ED for bulk transfer
 		
 		// 4) Set up HC registers and HC Communications Area
 		if(verbose_dbg){

@@ -1,6 +1,7 @@
 package ch.ntb.inf.deep.runtime.mpc5200.driver.usb;
 
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.exceptions.UsbException;
+import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.EndpointType;
 import ch.ntb.inf.deep.unsafe.US;
 
 public class UsbRequest {
@@ -73,12 +74,14 @@ public class UsbRequest {
 			throw new UsbException("UsbRequest: byte array too short.");
 		}
 		
+		OhciHcd.skipControlEndpoint();
 		setupTd = new TransferDescriptor(TdType.SETUP, setupGetDevDesc, 8);
-		OhciHcd.enqueueTd(setupTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, setupTd);
 		dataTd = new TransferDescriptor(TdType.IN, data, 18);
-		OhciHcd.enqueueTd(dataTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, dataTd);
 		statusTd = new TransferDescriptor(TdType.STATUS_OUT, null, 0);
-		OhciHcd.enqueueTd(statusTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, statusTd);
+		OhciHcd.resumeControlEndpoint();
 	}
 	
 	public void getDeviceDescriptorEnumeration(byte[] data) throws UsbException{
@@ -86,12 +89,14 @@ public class UsbRequest {
 			throw new UsbException("UsbRequest: byte array too short.");
 		}
 		
+		OhciHcd.skipControlEndpoint();
 		setupTd = new TransferDescriptor(TdType.SETUP, setupGetDevDescEnum, 8);
-		OhciHcd.enqueueTd(setupTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, setupTd);
 		dataTd = new TransferDescriptor(TdType.IN, data, 8);
-		OhciHcd.enqueueTd(dataTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, dataTd);
 		statusTd = new TransferDescriptor(TdType.STATUS_OUT, null, 0);
-		OhciHcd.enqueueTd(statusTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, statusTd);
+		OhciHcd.resumeControlEndpoint();
 	}
 	
 	public void setAddress(int address) throws UsbException{
@@ -100,11 +105,13 @@ public class UsbRequest {
 		}
 		setupSetAddress[2] = (byte) address;
 		
+		OhciHcd.skipControlEndpoint();
 		setupTd = new TransferDescriptor(TdType.SETUP, setupSetAddress, 8);
-		OhciHcd.enqueueTd(setupTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, setupTd);
 		// no data phase
 		statusTd = new TransferDescriptor(TdType.STATUS_IN, null, 0);
-		OhciHcd.enqueueTd(statusTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, statusTd);
+		OhciHcd.resumeControlEndpoint();
 	}
 	
 	public void setConfiguration(int configValue) throws UsbException{
@@ -115,10 +122,10 @@ public class UsbRequest {
 		OhciHcd.skipControlEndpoint();
 		setupSetConfiguration[2] = (byte) configValue;
 		setupTd = new TransferDescriptor(TdType.SETUP, setupSetConfiguration, 8);
-		OhciHcd.enqueueTd(setupTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, setupTd);
 		// no data phase
 		statusTd = new TransferDescriptor(TdType.STATUS_IN, null, 0);
-		OhciHcd.enqueueTd(statusTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, statusTd);
 		OhciHcd.resumeControlEndpoint();
 	}
 	
@@ -134,11 +141,26 @@ public class UsbRequest {
 		setupSetInterface[2] = (byte) altSetting;
 		setupSetInterface[4] = (byte) ifaceNum;
 		setupTd = new TransferDescriptor(TdType.SETUP, setupSetInterface, 8);
-		OhciHcd.enqueueTd(setupTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, setupTd);
 		// no data phase
 		statusTd = new TransferDescriptor(TdType.STATUS_IN, null, 0);
-		OhciHcd.enqueueTd(statusTd);
+		OhciHcd.enqueueTd(EndpointType.CONTROL, statusTd);
 		OhciHcd.resumeControlEndpoint();
+	}
+	
+	public void bulkTransfer(int endpoint, TransferDirection dir, byte[] data, int dataLength) throws UsbException{
+		OhciHcd.skipBulkEndpointOut();
+		if(dir == TransferDirection.IN){
+			dataTd = new TransferDescriptor(TdType.IN, data, dataLength);
+		}
+		else if(dir == TransferDirection.OUT){
+			dataTd = new TransferDescriptor(TdType.OUT, data, dataLength);
+			OhciHcd.enqueueTd(EndpointType.BULK_OUT, dataTd);
+		}
+		else{
+			throw new UsbException("invalid parameter in bulk transfer.");
+		}
+		OhciHcd.resumeBulkEndpointOut();
 	}
 	
 	public boolean controlDone() throws UsbException{

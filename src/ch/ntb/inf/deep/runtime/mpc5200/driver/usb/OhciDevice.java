@@ -12,6 +12,8 @@ public class OhciDevice extends Task{
 	private static UsbRequest setConfig;
 	private static UsbRequest setInterface;
 	
+	private UsbRequest bulkTransfer;
+	
 	public void action(){
 		if(init){
 			try{
@@ -49,6 +51,11 @@ public class OhciDevice extends Task{
 		setConfig.setConfiguration(cfgValue);
 		//TODO leave set interface out
 //		setInterface.setInterface(ifaceNum, altSetting);
+	}
+	
+	public static void bulkTransfer(UsbRequest usbReq, int endpointNumber, TransferDirection dir, byte[] data, int dataLength) throws UsbException{
+		OhciHcd.setBulkEndpointNumber(endpointNumber, dir);
+		usbReq.bulkTransfer(endpointNumber, dir, data, dataLength);
 	}
 	
 	static{

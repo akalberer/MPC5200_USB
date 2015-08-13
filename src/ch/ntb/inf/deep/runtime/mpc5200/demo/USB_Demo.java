@@ -5,6 +5,7 @@ import java.io.PrintStream;
 import ch.ntb.inf.deep.runtime.mpc5200.driver.UART3;
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.Device;
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.OhciHcd;
+import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.TransferDirection;
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.exceptions.UsbException;
 import ch.ntb.inf.deep.runtime.ppc32.Task;
 
@@ -12,6 +13,8 @@ public class USB_Demo extends Task{
 	
 	private Device usbDev;
 	private boolean initDone = false;
+	private boolean writeDone = false;
+	private byte[] testData = new byte[]{(byte)0x41, (byte)0x42, (byte)0x43, (byte)0x30};
 	
 	public void action(){
 		if(!initDone){
@@ -25,6 +28,16 @@ public class USB_Demo extends Task{
 				usbDev.open(1, 0, 1);
 			} catch (UsbException e) {
 				System.out.println("USB dev open failed.");
+				e.printStackTrace();
+			}
+		}
+		if(initDone && usbDev.isOpen() && !writeDone){
+			try{
+				usbDev.bulkTransfer(2, TransferDirection.OUT, testData, testData.length);
+				writeDone = true;
+			}
+			catch (UsbException e){
+				System.out.println("Bulk transfer failed.");
 				e.printStackTrace();
 			}
 		}
