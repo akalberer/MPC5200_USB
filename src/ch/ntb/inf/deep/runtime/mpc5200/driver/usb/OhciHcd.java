@@ -34,8 +34,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	private static boolean initDone = false;
 	
 	private static boolean dataToggleControl = true; 		/** false: DATA0; true: DATA1 */
-	private static boolean dataToggleBulkOut = false;
-	private static boolean dataToggleBulkIn = false;
+	private static boolean dataToggleBulkOut = true;
+	private static boolean dataToggleBulkIn = true;
 	
 	private static OhciState state;
 	private static boolean intHalted = false;		// flag to detect if HC was halted due to interrupt
@@ -247,7 +247,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		getDevDescEnum = new UsbRequest();
 		getDevDescEnum.getDeviceDescriptorEnumeration(dataEnumDevDesc);
 		
-		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
+//		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 		
 		while( !getDevDescEnum.controlDone() );		// wait for dev descriptor read
 		
@@ -264,7 +264,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		devDesc = new byte[18];
 		getDevDesc = new UsbRequest();
 		getDevDesc.getDeviceDescriptor(devDesc);
-		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
+//		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 	}
 	
 	public static void setControlListFilled(){
@@ -291,8 +291,9 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	
 	public static void skipBulkEndpointOut(){
 		bulkEndpointOutDesc.setSkipBit();
-		bulkEndpointOutDesc.setTdHeadPointer(emptyBulkOutTD.getTdAddress());
-		bulkEndpointOutDesc.setTdTailPointer(emptyBulkOutTD.getTdAddress());
+		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)& ~(OHCI_CTRL_CLE)));	// deactivate control list processing
+//		bulkEndpointOutDesc.setTdHeadPointer(emptyBulkOutTD.getTdAddress());
+//		bulkEndpointOutDesc.setTdTailPointer(emptyBulkOutTD.getTdAddress());
 	}
 	
 	public static void resumeBulkEndpointOut(){
@@ -408,10 +409,10 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			case BULK_OUT:
 				if( bulkEndpointOutDesc.getTdHeadPointer() == bulkEndpointOutDesc.getTdTailPointer() ){		// head == tail pointer, no td in the list
 					//			System.out.println("list is empty.");
-					if( US.GET4(bulkEndpointOutDesc.getTdHeadPointer()) == 0xF0000000 ){			// head is empty dummy descriptor				
-						td.setNextTD(emptyBulkOutTD.getTdAddress());	// set nextTd in td
+					if( US.GET4(bulkEndpointOutDesc.getTdHeadPointer()) == 0xF0000000 ){		// head is empty dummy descriptor				
+						td.setNextTD(emptyBulkOutTD.getTdAddress());							// set nextTd in td
 						bulkEndpointOutDesc.setTdHeadPointer(td.getTdAddress());				// set td as new head pointer
-						if(!dataToggleBulkOut){
+						if(dataToggleBulkOut){
 							td.setDataToggle(false);
 							dataToggleBulkOut = false;
 						}
@@ -443,7 +444,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 						return;		//TODO look if it works and remove this or throw exception
 					}
 					else{
-						if(!dataToggleBulkOut){
+						if(dataToggleBulkOut){
 							td.setDataToggle(false);
 							dataToggleBulkOut = false;
 						}
@@ -470,7 +471,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 					if( US.GET4(bulkEndpointInDesc.getTdHeadPointer()) == 0xF0000000 ){			// head is empty dummy descriptor				
 						td.setNextTD(emptyBulkInTD.getTdAddress());								// set nextTd in td
 						bulkEndpointInDesc.setTdHeadPointer(td.getTdAddress());					// set td as new head pointer
-						if(!dataToggleBulkIn){
+						if(dataToggleBulkIn){
 							td.setDataToggle(false);
 							dataToggleBulkIn = false;
 						}
@@ -502,7 +503,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 					}
 					else{
 //						if( (td.getType() == TdType.IN) ||  (td.getType()== TdType.OUT)){
-							if(!dataToggleBulkIn){
+							if(dataToggleBulkIn){
 								td.setDataToggle(false);
 								dataToggleBulkIn = false;
 							}

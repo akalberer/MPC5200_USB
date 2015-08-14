@@ -14,7 +14,7 @@ public class USB_Demo extends Task{
 	private Device usbDev;
 	private boolean initDone = false;
 	private boolean writeDone = false;
-	private static byte[] testData = new byte[]{(byte)0x41, (byte)0x42, (byte)0x43, (byte)0x30};
+	private static byte[] testData = new byte[]{(byte)0x41, (byte)0x42, (byte)0x43, (byte)0x30, (byte)0x0D, (byte)0x0A};
 	private static byte[] testData2 = new byte[]{(byte)0x30, (byte)0x31, (byte)0x32, (byte)0x0D, (byte)0x0A};
 	private static byte[] readData;
 	
@@ -43,10 +43,10 @@ public class USB_Demo extends Task{
 //				e.printStackTrace();
 //			}
 		}
-		if(initDone && usbDev.isOpen() && writeDone && (nofActivations % 2000 == 0)){
+		if(initDone && usbDev.isOpen() && writeDone && (nofActivations % 1997 == 0)){
 			try{
 //				usbDev.bulkTransfer(1, TransferDirection.IN, readData, readData.length);
-				usbDev.bulkTransfer(2, TransferDirection.OUT, testData2, testData2.length);
+				usbDev.bulkTransfer(2, TransferDirection.OUT, testData, testData.length);
 			}
 			catch(UsbException e){
 				System.out.println("Bulk in failed");

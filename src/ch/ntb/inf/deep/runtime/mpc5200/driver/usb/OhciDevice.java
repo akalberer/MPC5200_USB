@@ -26,9 +26,6 @@ public class OhciDevice extends Task{
 			init = false;
 			initDone = true;
 		}
-		if (nofActivations % 2000 == 0) {
-			System.out.println("t");
-		}
 		if(OhciHcd.inISR == true){
 //			System.out.println(".");
 			OhciHcd.inISR = false;
