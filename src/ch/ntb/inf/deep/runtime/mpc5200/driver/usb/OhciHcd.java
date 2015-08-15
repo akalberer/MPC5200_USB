@@ -317,10 +317,6 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	
 	public static void resumeBulkEndpointIn(){
 		bulkEndpointInDesc.clearSkipBit();
-		System.out.println("BulkEndpointIn DevAddr:");
-		System.out.println(bulkEndpointInDesc.getEndpoint());
-		System.out.println(" MPS: ");
-		System.out.println(bulkEndpointInDesc.getMaxPacketSize());
 		setBulkListFilled();
 	}
 	

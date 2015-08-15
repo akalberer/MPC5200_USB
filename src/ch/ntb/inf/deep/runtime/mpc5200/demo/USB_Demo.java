@@ -28,28 +28,54 @@ public class USB_Demo extends Task{
 		if(initDone && !usbDev.isOpen() ){
 			try {
 				usbDev.open(1, 0, 1);
+				writeDone = true;
 			} catch (UsbException e) {
 				System.out.println("USB dev open failed.");
 				e.printStackTrace();
 			}
 		}
-		if(initDone && usbDev.isOpen() && !writeDone){
-//			try{
-//				usbDev.bulkTransfer(2, TransferDirection.OUT, testData2, testData2.length);
-				writeDone = true;
-//			}
-//			catch (UsbException e){
-//				System.out.println("Bulk transfer failed.");
-//				e.printStackTrace();
-//			}
+		if(initDone && usbDev.isOpen() && writeDone && (nofActivations % 1333 == 0)){
+			try{
+				usbDev.bulkTransfer(2, TransferDirection.OUT, testData2, testData2.length);
+			}
+			catch (UsbException e){
+				System.out.println("Bulk OUT transfer failed.");
+				e.printStackTrace();
+			}
 		}
 		if(initDone && usbDev.isOpen() && writeDone && (nofActivations % 1997 == 0)){
 			try{
-//				usbDev.bulkTransfer(1, TransferDirection.IN, readData, readData.length);
 				usbDev.bulkTransfer(2, TransferDirection.OUT, testData, testData.length);
 			}
 			catch(UsbException e){
-				System.out.println("Bulk in failed");
+				System.out.println("Bulk OUT transfer failed.");
+				e.printStackTrace();
+			}
+		}
+		if(initDone && usbDev.isOpen() && writeDone && (nofActivations % 100 == 0)){	// read every 100ms
+			try{
+
+				usbDev.bulkTransfer(1, TransferDirection.IN, readData, readData.length);
+			}
+			catch(UsbException e){
+				System.out.println("Bulk IN transfer failed.");
+				e.printStackTrace();
+			}
+		}
+		if(readData[0] != 0){
+			System.out.println("readData:");
+			int i;
+			if(readData[0] == 0x01 && readData[1] == 0x60){		// if FTDI protocol: cut the first two bytes
+				i = 2;
+				readData[0] = 0;		//"read" bytes
+				readData[1] = 0;
+			}
+			else{
+				i = 0;
+			}
+			for(; (i < readData.length) && (readData[i] != 0); i++){
+				System.out.print((char)(readData[i]));
+				readData[i] = 0;
 			}
 		}
 	}
@@ -70,6 +96,6 @@ public class USB_Demo extends Task{
 		t.period = 1;
 		Task.install(t);
 		
-		readData = new byte[8];
+		readData = new byte[50];
 	}
 }
