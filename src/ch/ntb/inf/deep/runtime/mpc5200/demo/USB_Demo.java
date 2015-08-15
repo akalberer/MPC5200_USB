@@ -63,7 +63,6 @@ public class USB_Demo extends Task{
 			}
 		}
 		if(readData[0] != 0){
-			System.out.println("readData:");
 			int i;
 			if(readData[0] == 0x01 && readData[1] == 0x60){		// if FTDI protocol: cut the first two bytes
 				i = 2;
@@ -96,6 +95,6 @@ public class USB_Demo extends Task{
 		t.period = 1;
 		Task.install(t);
 		
-		readData = new byte[50];
+		readData = new byte[64];
 	}
 }

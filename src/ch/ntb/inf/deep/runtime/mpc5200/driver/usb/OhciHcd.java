@@ -450,11 +450,11 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 						}
 							//					}
 						//				if(verbose_dbg){
-						System.out.println("next for new td: ");
-						System.out.println(US.GET4(nextTd));
+//						System.out.println("next for new td: ");
+//						System.out.println(US.GET4(nextTd));
 						//				}
 						td.setNextTD(US.GET4(nextTd));								// set old end td pointer as next td for new enqueued td
-						System.out.println(nextTd);
+//						System.out.println(nextTd);
 						//				}
 						US.PUT4(nextTd, td.getTdAddress());			// set td next pointer
 					}
@@ -510,11 +510,11 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 							//					}
 //						}
 						//				if(verbose_dbg){
-						System.out.println("IN: next for new td: ");
-						System.out.println(US.GET4(nextTd));
+//						System.out.println("IN: next for new td: ");
+//						System.out.println(US.GET4(nextTd));
 						//				}
 						td.setNextTD(US.GET4(nextTd));								// set old end td pointer as next td for new enqueued td
-						System.out.println(nextTd);
+//						System.out.println(nextTd);
 						//				}
 						US.PUT4(nextTd, td.getTdAddress());			// set td next pointer
 					}

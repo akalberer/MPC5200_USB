@@ -22,7 +22,6 @@ public class OhciDevice extends Task{
 			catch(UsbException e){
 				e.printStackTrace();
 			}
-			System.out.println("init done");
 			init = false;
 			initDone = true;
 		}
