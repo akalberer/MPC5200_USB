@@ -3,6 +3,13 @@ package ch.ntb.inf.deep.runtime.mpc5200.driver.usb;
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.exceptions.UsbException;
 import ch.ntb.inf.deep.unsafe.US;
 
+/**
+ * <b>OhciEndpointDescriptor</b><br>
+ * Represents the memory structure needed for an EndpointDescriptor, that will be processed by the Host Controller during operation
+ * 
+ * @author Andreas Kalberer
+ */
+
 public class OhciEndpointDescriptor {
 	
 	private int[] endpointDesc;
@@ -55,14 +62,25 @@ public class OhciEndpointDescriptor {
 		}
 	}
 	
+	/**
+	 * set skip bit of endpoint descriptor
+	 */
 	public void setSkipBit(){
 		setSkipBit(true);
 	}
 	
+	/**
+	 * clear skip bit of endpoint descriptor
+	 */
 	public void clearSkipBit(){
 		setSkipBit(false);
 	}
 	
+	/**
+	 * set USB device address
+	 * @param address		desired and configured address with SET_ADDRESS Request
+	 * @throws UsbException	on failure
+	 */
 	public void setUsbDevAddress(int address) throws UsbException{
 		if(address > 127 || address <= 0){
 			throw new UsbException("wrong usb address.");
@@ -73,6 +91,11 @@ public class OhciEndpointDescriptor {
 		usbDevAddress = address;
 	}
 	
+	/**
+	 * set endpoint that should be used
+	 * @param endpoint			desired endpoint
+	 * @throws UsbException		on failure
+	 */
 	public void setEndpoint(int endpoint) throws UsbException{
 		if(endpoint < 0 || endpoint > 0xF){
 			throw new UsbException("invalid endpoint.");
@@ -81,33 +104,66 @@ public class OhciEndpointDescriptor {
 		endpointDesc[2] |= (endpoint << 7);	// set new endpoint number
 	}
 	
+	/**
+	 * get the endpoint number this EndpointDescriptor uses
+	 * @return endpoint number
+	 */
 	public int getEndpoint(){
 		return ((endpointDesc[2] & 0x00000780) >> 7);
 	}
 	
+	/**
+	 * set tail pointer of TransferDescriptor list linked to this endpoint
+	 * @param address address of tail TransferDescriptor
+	 */
 	public void setTdTailPointer(int address){
 		endpointDesc[3] = address;
 	}
 	
+	/**
+	 * get tail pointer of TransferDescriptor list linked to this endpoint
+	 * @return pointer to tail TransferDescriptor
+	 */
 	public int getTdTailPointer(){
 		return endpointDesc[3];
 	}
 	
+	/**
+	 * set head pointer of TransferDescriptor list linked to this endpoint
+	 * @param address address of head TransferDescriptor
+	 */
 	public void setTdHeadPointer(int address){
 		endpointDesc[4] = (address & 0xFFFFFFF0);
 	}
 	
+	/**
+	 * get head pointer of TransferDescriptor list linked to this endpoint
+	 * @return pointer to head TransferDescriptor
+	 */
 	public int getTdHeadPointer(){
 		return (endpointDesc[4] & 0xFFFFFFF0);
 	}
+	
+	/**
+	 * set next EndpointDescriptor
+	 * @param address address of next EndpointDescriptor that should be linked to this EndpointDescriptor
+	 */
 	public void setNextEndpointDescriptor(int address){
 		endpointDesc[5] = address;
 	}
 	
+	/**
+	 * get next EndpointDescriptor
+	 * @return address of next EndpointDescriptor linked to this EndpointDescriptor
+	 */
 	public int getNextEndpointDescriptor(){
 		return endpointDesc[5];
 	}
 	
+	/**
+	 * get address of memory structure that needs to be passed to HostController or used for linking to this EndpointDescriptor
+	 * @return address of EndpointDescriptor structure in memory
+	 */
 	public int getEndpointDescriptorAddress(){
 		return (US.REF(endpointDesc) + 8);
 	}

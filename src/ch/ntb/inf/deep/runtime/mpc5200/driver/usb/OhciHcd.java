@@ -7,12 +7,14 @@ import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.exceptions.UsbException;
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.OhciState;
 import ch.ntb.inf.deep.unsafe.US;
 
+/**
+ * OHCI (Open Host Controller Interface) Host Controller Driver for the MPC5200
+ * 
+ * @author Andreas Kalberer
+ */
+
 public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 
-	private static final int FI = 0x2edf;		//fminterval: 12000 bits per frame (-1)
-	private static final int FSMPS = (0x7FFF & (6 * (FI - 210)/7));
-	private static final int OCR = 3;			
-	
 	private static final boolean verbose_dbg = false;
 	
 	private static byte[] hcca;
@@ -33,9 +35,9 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	
 	private static boolean initDone = false;
 	
-	private static boolean dataToggleControl = true; 		/** false: DATA0; true: DATA1 */
-	private static boolean dataToggleBulkOut = true;
-	private static boolean dataToggleBulkIn = true;
+	private static boolean dataToggleControl = true; 		// false: DATA0; true: DATA1
+	private static boolean dataToggleBulkOut = true;		// false: DATA0; true: DATA1
+	private static boolean dataToggleBulkIn = true;			// false: DATA0; true: DATA1
 	
 	private static OhciState state;
 	private static boolean intHalted = false;		// flag to detect if HC was halted due to interrupt
@@ -108,6 +110,9 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	public static final int RH_HS_OCIC = 0x00020000;	// over current indicator change
 	public static final int RH_HS_CRWE = 0x80000000;	// clear remote wakeup enable
 	
+	public static final int FI = 0x2edf;				//frame interval: 12000 bits per frame (-1)
+	public static final int FSMPS = (0x7FFF & (6 * (FI - 210)/7));	// FSLargestDataPacket	
+	
 	/**
 	 * masks used with interrupt registers:
 	 * HcInterruptStatus (USBHCISR)
@@ -124,11 +129,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	public static final int OHCI_INTR_OC = 0x40000000;		// ownership change
 	public static final int OHCI_INTR_MIE = 0x80000000;		// master interrupt enable
 	public static final int OHCI_INTR_INIT = (OHCI_INTR_MIE | OHCI_INTR_RHSC | OHCI_INTR_UE | OHCI_INTR_RD | OHCI_INTR_WDH);
-	
+
 	public static boolean inISR = false;
-//	public USB(){
-//		
-//	}
 	
 	public void action(){
 		US.PUT4(GPWOUT, US.GET4(GPWOUT) & ~0x80000000);	//switch led on
@@ -178,18 +180,21 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		}		
 	}
 	
+	/**
+	 * check if exceptions on USB communication occured and later reinit HC
+	 * @throws UsbException
+	 */
 	public static void run() throws UsbException{
 		//TODO used to check for exceptions occured in ISR, reinit HCD, etc.
 		if(intHalted){
-			throw new UsbException("HC died, detected by ISR");	//TODO improve error handling
+			throw new UsbException("HC died, detected by ISR");	//TODO improve error handling, add reinit etc.
 		}
-		
 	}
 	
 	/**
 	 * reset root hub
 	 * each reset needs around 10ms, need at least 5, better 6 resets to get the full 50ms reset signaling for the connected device
-	 * @throws UsbException
+	 * @throws UsbException on failure
 	 */
 	public static void resetRootHub() throws UsbException{
 		int portResetFrameNumDone = US.GET4(USBHCFNR) + PORT_RESET_DELAY;	// check with actual frame number
@@ -226,10 +231,18 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		}while(	(US.GET4(USBHCFNR) < portResetFrameNumDone) && nofResets > 0);
 	}
 	
+	/**
+	 * check if init of host controller is done
+	 * @return true: if finished, else false
+	 */
 	public static boolean initDone(){
 		return initDone;
 	}
 	
+	/**
+	 * enumerate the connected device on the USB port
+	 * @throws UsbException
+	 */
 	public static void enumerateDevice() throws UsbException{
 		long currentTime = Kernel.time();
 		while(Kernel.time() - currentTime < 10000); // wait 10ms after reset
@@ -247,8 +260,6 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		getDevDescEnum = new UsbRequest();
 		getDevDescEnum.getDeviceDescriptorEnumeration(dataEnumDevDesc);
 		
-//		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
-		
 		while( !getDevDescEnum.controlDone() );		// wait for dev descriptor read
 		
 		setUsbAddress = new UsbRequest();
@@ -264,38 +275,56 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		devDesc = new byte[18];
 		getDevDesc = new UsbRequest();
 		getDevDesc.getDeviceDescriptor(devDesc);
-//		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 	}
 	
+	/**
+	 * set control list filled flag in command status register (USBHCCMDSR -> CLF)
+	 */
 	public static void setControlListFilled(){
-		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));
 	}
 	
+	/**
+	 * set bulk list filled flag in command status register (USBHCCMDSR -> BLF)
+	 */
 	public static void setBulkListFilled(){
-		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_BLF));	// set bulk list filled
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_BLF));
 	}
 	
+	/**
+	 * reset ohci host controller
+	 */
 	private static void ohci_hcd_reset(){
 		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) & OHCI_CTRL_RWC));		// reset HC, except RWC
 		state = OhciState.OHCI_RH_HALTED;
 	}
 	
+	/**
+	 * set skip bit of control endpoint
+	 */
 	public static void skipControlEndpoint(){
 		controlEndpointDesc.setSkipBit();
 	}
 	
+	/**
+	 * clear skip bit of control endpoint and set control list filled flag
+	 */
 	public static void resumeControlEndpoint(){
 		controlEndpointDesc.clearSkipBit();
 		setControlListFilled();		// set control list filled
 	}
 	
+	/**
+	 * set skip bit of OUT endpoint
+	 */
 	public static void skipBulkEndpointOut(){
 		bulkEndpointOutDesc.setSkipBit();
 		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)& ~(OHCI_CTRL_CLE)));	// deactivate control list processing
-//		bulkEndpointOutDesc.setTdHeadPointer(emptyBulkOutTD.getTdAddress());
-//		bulkEndpointOutDesc.setTdTailPointer(emptyBulkOutTD.getTdAddress());
 	}
 	
+	/**
+	 * clar skip bit of OUT endpoint and set bulk list filled flag
+	 */
 	public static void resumeBulkEndpointOut(){
 		bulkEndpointOutDesc.clearSkipBit();
 		if( (US.GET4(US.GET4(USBHCBCED)) & 0xF0000000) == 0 ){		// current endpoint is already processed
@@ -311,17 +340,28 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		setBulkListFilled();
 	}
 	
+	/**
+	 * set skip bit of IN endpoint
+	 */
 	public static void skipBulkEndpointIn(){
 		bulkEndpointInDesc.setSkipBit();
 	}
 	
+	/**
+	 * clear skip bit of IN endpoint and set bulk list filled flag
+	 */
 	public static void resumeBulkEndpointIn(){
 		bulkEndpointInDesc.clearSkipBit();
 		setBulkListFilled();
 	}
 	
+	/**
+	 * enqueue TransferDescriptor to the corresponding list
+	 * @param epType	type of endpoint needed for transfer
+	 * @param td		TransferDescriptor that should be enqueued
+	 */
 	public static void enqueueTd(EndpointType epType, TransferDescriptor td){
-
+		
 		switch(epType){
 			case CONTROL:
 				//		testED[2] = 0x00084000;		// set skip bit -> Endpoint will be skiped
@@ -527,11 +567,14 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			default:
 				break;
 		}
-		
-//		testED[2] = 0x00080000;		// activate list processing
-//		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_CLF));	// set control list filled
 	}
 	
+	/**
+	 * set bulk endpoint number
+	 * @param endpointNumber	endpoint number that OUT or IN transfers are needed for this device
+	 * @param dir				IN or OUT direction
+	 * @throws UsbException		on failure
+	 */
 	public static void setBulkEndpointNumber(int endpointNumber, TransferDirection dir) throws UsbException{
 		if(dir == TransferDirection.IN){
 			bulkEndpointInDesc.setEndpoint(endpointNumber);
@@ -541,10 +584,16 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		}
 	}
 	
+	/**
+	 * update the done list of the hcd
+	 */
 	private static void updateDoneList(){
 		//TODO -> ohci-q.c Z.932ff
 	}
 	
+	/**
+	 * re-init of frame interfal and FSLargestDataPacket
+	 */
 	public static void periodicReInit(){
 		// read and set frame interval
 		int val = (US.GET4(USBHCFIR) & 0x3FFF);
@@ -556,6 +605,10 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		US.PUT4(USBHCPSR, (int)(FI*9/10));			// config periodic start (0.9*FrameInterval)
 	}
 	
+	/**
+	 * init of host controller and host controller driver
+	 * @throws UsbException on failure
+	 */
 	public static void init() throws UsbException{
 		state = OhciState.OHCI_RH_HALTED;
 		
@@ -609,7 +662,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		bulkEndpointInDesc.setNextEndpointDescriptor(bulkEndpointOutDesc.getEndpointDescriptorAddress());
 		
 		// 3) load driver, take control of host controller
-		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) |(1 << OCR)) ); // set OwnershipChangeRequest
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_OCR) ); // set OwnershipChangeRequest
 		
 		// -> routed to interrupt controller in SIU -> route from there to SMI, NORMAL interrupt
 		InterruptMpc5200io ohciInt = new OhciHcd();
