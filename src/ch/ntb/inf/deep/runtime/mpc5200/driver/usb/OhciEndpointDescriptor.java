@@ -17,8 +17,11 @@ public class OhciEndpointDescriptor {
 	
 	private static int usbDevAddress = 0;		// address of USB-Device after enumeration
 	
-	public OhciEndpointDescriptor(EndpointType epType){
+	public OhciEndpointDescriptor(EndpointType epType) throws UsbException{
 		this.endpointDesc = new int[6];
+		if( (epType == EndpointType.INTERRUPT) || (epType == EndpointType.ISOCHRONOUS) ){
+			throw new UsbException("EndpointType not supported");
+		}
 		this.epType = epType;
 	}
 	
@@ -89,6 +92,14 @@ public class OhciEndpointDescriptor {
 		endpointDesc[2] &= ~0x0000007F;		// clear current usb device address
 		endpointDesc[2] |= address;			// set new address
 		usbDevAddress = address;
+	}
+	
+	/**
+	 * get USB device address
+	 * @return device address this endpoint is configured to
+	 */
+	public int getUsbDevAddress(){
+		return usbDevAddress;
 	}
 	
 	/**
@@ -166,5 +177,13 @@ public class OhciEndpointDescriptor {
 	 */
 	public int getEndpointDescriptorAddress(){
 		return (US.REF(endpointDesc) + 8);
+	}
+	
+	/**
+	 * get type of endpoint
+	 * @return {@link EndpointType}
+	 */
+	public EndpointType getEndpointType(){
+		return epType;
 	}
 }

@@ -17,6 +17,9 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 
 	private static final boolean verbose_dbg = false;
 	
+	/**
+	 * memory structures for host controller and enumeration
+	 */
 	private static byte[] hcca;
 	private static final int HCCA_SIZE = 263;	//256 + 7 
 	private static OhciEndpointDescriptor controlEndpointDesc;
@@ -35,6 +38,9 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	
 	private static boolean initDone = false;
 	
+	/**
+	 * data toggle states of different transfers, false: DATA0; true: DATA1
+	 */
 	private static boolean dataToggleControl = true; 		// false: DATA0; true: DATA1
 	private static boolean dataToggleBulkOut = true;		// false: DATA0; true: DATA1
 	private static boolean dataToggleBulkIn = true;			// false: DATA0; true: DATA1
@@ -70,10 +76,13 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	public static final int OHCI_OCR = 0x00000008;		// ownership change request
 	public static final int OHCI_SOC = 0x00030000;		// scheduling overrun count
 	
-	public static final int OHCI_USB_RESET = 0x00000000;
-	public static final int OHCI_USB_RESUME = 0x00000040;
-	public static final int OHCI_USB_OPER = 0x00000080;
-	public static final int OHCI_USB_SUSPEND = 0x000000C0;
+	/**
+	 * Host controller functional states (HCFS)
+	 */
+	public static final int OHCI_USB_RESET = 0x00000000;	// reset
+	public static final int OHCI_USB_RESUME = 0x00000040;	// resume
+	public static final int OHCI_USB_OPER = 0x00000080;		// operational
+	public static final int OHCI_USB_SUSPEND = 0x000000C0;	// suspend
 			
 	/** roothub a masks 
 	*/
@@ -110,6 +119,9 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	public static final int RH_HS_OCIC = 0x00020000;	// over current indicator change
 	public static final int RH_HS_CRWE = 0x80000000;	// clear remote wakeup enable
 	
+	/**
+	 * frame interval values
+	 */
 	public static final int FI = 0x2edf;				//frame interval: 12000 bits per frame (-1)
 	public static final int FSMPS = (0x7FFF & (6 * (FI - 210)/7));	// FSLargestDataPacket	
 	
@@ -271,7 +283,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		bulkEndpointOutDesc.setUsbDevAddress(usbDevAddress);
 		bulkEndpointInDesc.setUsbDevAddress(usbDevAddress);
 		
-		controlEndpointDesc.setMaxPacketSize(dataEnumDevDesc[7]);		//set skip bit and mps 64byte -> TODO read from data above
+		controlEndpointDesc.setMaxPacketSize(dataEnumDevDesc[7]);		//set skip bit and mps 64byte
 		devDesc = new byte[18];
 		getDevDesc = new UsbRequest();
 		getDevDesc.getDeviceDescriptor(devDesc);
@@ -326,17 +338,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	 * clar skip bit of OUT endpoint and set bulk list filled flag
 	 */
 	public static void resumeBulkEndpointOut(){
-		bulkEndpointOutDesc.clearSkipBit();
-		if( (US.GET4(US.GET4(USBHCBCED)) & 0xF0000000) == 0 ){		// current endpoint is already processed
-//			US.PUT4(USBHCBCED, bulkEndpointOutDesc.getEndpointDescriptorAddress());
-//			if( US.GET4(USBHCBCED) == bulkEndpointOutDesc.getEndpointDescriptorAddress()){	// current is Out
-//				US.PUT4(USBHCBCED, bulkEndpointInDesc.getEndpointDescriptorAddress());
-//			}
-//			else if(US.GET4(USBHCBCED) == bulkEndpointInDesc.getEndpointDescriptorAddress()){	// current is In
-//				US.PUT4(USBHCBCED, bulkEndpointOutDesc.getEndpointDescriptorAddress());
-//			}
-		}
-		
+		bulkEndpointOutDesc.clearSkipBit();		
 		setBulkListFilled();
 	}
 	
@@ -360,14 +362,15 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	 * @param epType	type of endpoint needed for transfer
 	 * @param td		TransferDescriptor that should be enqueued
 	 */
-	public static void enqueueTd(EndpointType epType, TransferDescriptor td){
+	public static void enqueueTd(EndpointType epType, TransferDescriptor td) throws UsbException{
 		
 		switch(epType){
 			case CONTROL:
-				//		testED[2] = 0x00084000;		// set skip bit -> Endpoint will be skiped
 	
 				if( controlEndpointDesc.getTdHeadPointer() == controlEndpointDesc.getTdTailPointer() ){		// head == tail pointer, no td in the list
-					//			System.out.println("list is empty.");
+					if(verbose_dbg){
+						System.out.println("control list is empty.");
+					}
 					if( US.GET4(controlEndpointDesc.getTdHeadPointer()) == 0xF0000000 ){			// head is empty dummy descriptor
 						if(verbose_dbg){
 							System.out.println("head is empty descriptor");
@@ -376,46 +379,32 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 							System.out.println("add addr of new to testED[4]: ");
 							System.out.println(td.getTdAddress());
 						}				
-						td.setNextTD(emptyControlTD.getTdAddress());	// set nextTd in td
-						controlEndpointDesc.setTdHeadPointer(td.getTdAddress());				// set td as new head pointer
+						td.setNextTD(emptyControlTD.getTdAddress());								// set nextTd in td
+						controlEndpointDesc.setTdHeadPointer(td.getTdAddress());					// set td as new head pointer
 						US.PUT4(USBHCCHEDR, controlEndpointDesc.getEndpointDescriptorAddress());	//set Head ED for control transfer
 					}
 				}
-				else{				// already TD's in list
-					//			System.out.println("already TD in list");
-					if( US.GET4(controlEndpointDesc.getTdHeadPointer()) == 0xF0000000 ){
-						System.out.println("head is empty desc");
+				else{					// already TD's in list
+					if(verbose_dbg){
+						System.out.println("already TD in list");
+						if( US.GET4(controlEndpointDesc.getTdHeadPointer()) == 0xF0000000 ){
+							System.out.println("head is empty desc");
+						}
 					}
 					// find last td before empty dummy descriptor, start at head pointer
-					int nextTd = ((controlEndpointDesc.getTdHeadPointer()) + 8);		// NextTD
+					int nextTd = ((controlEndpointDesc.getTdHeadPointer()) + 8);					// NextTD
 					int nofSearches = 0;
-					if(US.GET4(nextTd) != 0xF0000000){		// check if not just one element in list
+					if(US.GET4(nextTd) != 0xF0000000){					// check if not just one element in list
 						while ((US.GET4(US.GET4(nextTd)) != 0xF0000000) && (nofSearches < 2000) ){
-							if(nextTd == 0x00000000){
-								System.out.println("next == null1");
-							}
-							nextTd = (US.GET4(nextTd) + 8);			// NextTD field in TransferDescriptor
-							if(nextTd == 0x00000000){
-								System.out.println("next == null2");
-							}
+							nextTd = (US.GET4(nextTd) + 8);				// NextTD field in TransferDescriptor
 							nofSearches++;
 						}
 					}
-	
 					if(nofSearches >= 2000){
-						System.out.println("Search of TDs failed");
-						return;		//TODO look if it works and remove this or throw exception
+						throw new UsbException("enqueue: search of tail TD failed!");
 					}
 					else{
-						if( (td.getType() == TdType.IN) ||  (td.getType()== TdType.OUT)){
-							// read data toggle from endpoint descriptor
-							//					if((US.GET4(US.GET4(lastTd)) & 0x00180000) == 0){	// last td was setup -> DATA1
-							//						td.setDataToggle(true);
-							//						System.out.println("last was setup");
-							//					}
-							//					else{			// read toggle from last td
-							//						System.out.println("toggle:");
-							//						if( (US.GET4(US.GET4(lastTd)) & 0x0F000000) == 0x03000000){	
+						if( (td.getType() == TdType.IN) ||  (td.getType()== TdType.OUT)){	
 							if(!dataToggleControl){
 								td.setDataToggle(false);
 								dataToggleControl = false;
@@ -424,27 +413,28 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 								td.setDataToggle(true);
 								dataToggleControl = true;
 							}
-							//					}
 						}
 	
 						// add before empty TD
-						//				if(verbose_dbg){
-//						System.out.println("next for new td: ");
-//						System.out.println(US.GET4(nextTd));
-						//				}
-						td.setNextTD(US.GET4(nextTd));								// set old end td pointer as next td for new enqueued td
-						//				if(verbose_dbg){
-						//					System.out.println("add addr of new to Td:");
-						//					System.out.println("nextTd:");
-//						System.out.println(nextTd);
-						//				}
-						US.PUT4(nextTd, td.getTdAddress());			// set td next pointer
+						if(verbose_dbg){
+							System.out.println("next for new td: ");
+							System.out.println(US.GET4(nextTd));
+						}
+						td.setNextTD(US.GET4(nextTd));					// set old end td pointer as next td for new enqueued td
+						if(verbose_dbg){
+							System.out.println("add addr of new to Td:");
+							System.out.println("nextTd:");
+							System.out.println(nextTd);
+						}
+						US.PUT4(nextTd, td.getTdAddress());				// set td next pointer
 					}
 				}
 				break;
 			case BULK_OUT:
 				if( bulkEndpointOutDesc.getTdHeadPointer() == bulkEndpointOutDesc.getTdTailPointer() ){		// head == tail pointer, no td in the list
-					//			System.out.println("list is empty.");
+					if(verbose_dbg){
+						System.out.println("bulk OUT list is empty.");
+					}
 					if( US.GET4(bulkEndpointOutDesc.getTdHeadPointer()) == 0xF0000000 ){		// head is empty dummy descriptor				
 						td.setNextTD(emptyBulkOutTD.getTdAddress());							// set nextTd in td
 						bulkEndpointOutDesc.setTdHeadPointer(td.getTdAddress());				// set td as new head pointer
@@ -457,18 +447,19 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 							dataToggleBulkOut = true;
 						}
 						US.PUT4(USBHCBHEDR, bulkEndpointOutDesc.getEndpointDescriptorAddress());	//set Head ED for bulk transfer
-//						US.PUT4(USBHCBCED, bulkEndpointOutDesc.getEndpointDescriptorAddress());		//set current ED for bulk transfer
 					}
 				}
 				else{				// already TD's in list
-					//			System.out.println("already TD in list");
-					if( US.GET4(bulkEndpointOutDesc.getTdHeadPointer()) == 0xF0000000 ){
-						System.out.println("head is empty desc");
+					if(verbose_dbg){
+						System.out.println("already TD in list");
+						if( US.GET4(bulkEndpointOutDesc.getTdHeadPointer()) == 0xF0000000 ){
+							System.out.println("head is empty desc");
+						}
 					}
 					// find last td before empty dummy descriptor, start at head pointer
 					int nextTd = ((bulkEndpointOutDesc.getTdHeadPointer()) + 8);		// NextTD
 					int nofSearches = 0;
-					if(US.GET4(nextTd) != 0xF0000000){		// check if not just one element in list
+					if(US.GET4(nextTd) != 0xF0000000){				// check if not just one element in list
 						while ((US.GET4(US.GET4(nextTd)) != 0xF0000000) && (nofSearches < 2000) ){
 							nextTd = (US.GET4(nextTd) + 8);			// NextTD field in TransferDescriptor
 							nofSearches++;
@@ -476,8 +467,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 					}
 	
 					if(nofSearches >= 2000){
-						System.out.println("Search of TDs failed");
-						return;		//TODO look if it works and remove this or throw exception
+						throw new UsbException("enqueue: search of tail TD failed!");
 					}
 					else{
 						if(dataToggleBulkOut){
@@ -488,14 +478,14 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 							td.setDataToggle(true);
 							dataToggleBulkOut = true;
 						}
-							//					}
-						//				if(verbose_dbg){
-//						System.out.println("next for new td: ");
-//						System.out.println(US.GET4(nextTd));
-						//				}
-						td.setNextTD(US.GET4(nextTd));								// set old end td pointer as next td for new enqueued td
-//						System.out.println(nextTd);
-						//				}
+						if(verbose_dbg){
+							System.out.println("next for new td: ");
+							System.out.println(US.GET4(nextTd));
+						}
+						td.setNextTD(US.GET4(nextTd));				// set old end td pointer as next td for new enqueued td
+						if(verbose_dbg){
+							System.out.println(nextTd);
+						}
 						US.PUT4(nextTd, td.getTdAddress());			// set td next pointer
 					}
 				}
@@ -503,7 +493,9 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 				break;
 			case BULK_IN:
 				if( bulkEndpointInDesc.getTdHeadPointer() == bulkEndpointInDesc.getTdTailPointer() ){		// head == tail pointer, no td in the list
-					//			System.out.println("list is empty.");
+					if(verbose_dbg){
+						System.out.println("bulk IN list is empty.");
+					}
 					if( US.GET4(bulkEndpointInDesc.getTdHeadPointer()) == 0xF0000000 ){			// head is empty dummy descriptor				
 						td.setNextTD(emptyBulkInTD.getTdAddress());								// set nextTd in td
 						bulkEndpointInDesc.setTdHeadPointer(td.getTdAddress());					// set td as new head pointer
@@ -519,9 +511,11 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 					}
 				}
 				else{				// already TD's in list
-					//			System.out.println("already TD in list");
-					if( US.GET4(bulkEndpointInDesc.getTdHeadPointer()) == 0xF0000000 ){
-						System.out.println("head is empty desc");
+					if(verbose_dbg){
+						System.out.println("already TD in list");
+						if( US.GET4(bulkEndpointInDesc.getTdHeadPointer()) == 0xF0000000 ){
+							System.out.println("head is empty desc");
+						}
 					}
 					// find last td before empty dummy descriptor, start at head pointer
 					int nextTd = ((bulkEndpointInDesc.getTdHeadPointer()) + 8);		// NextTD
@@ -534,36 +528,35 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 					}
 	
 					if(nofSearches >= 2000){
-						System.out.println("Search of TDs failed");
-						return;		//TODO look if it works and remove this or throw exception
+						throw new UsbException("enqueue: search of tail TD failed!");
 					}
 					else{
-//						if( (td.getType() == TdType.IN) ||  (td.getType()== TdType.OUT)){
-							if(dataToggleBulkIn){
-								td.setDataToggle(false);
-								dataToggleBulkIn = false;
-							}
-							else{
-								td.setDataToggle(true);
-								dataToggleBulkIn = true;
-							}
-							//					}
-//						}
-						//				if(verbose_dbg){
-//						System.out.println("IN: next for new td: ");
-//						System.out.println(US.GET4(nextTd));
-						//				}
-						td.setNextTD(US.GET4(nextTd));								// set old end td pointer as next td for new enqueued td
-//						System.out.println(nextTd);
-						//				}
-						US.PUT4(nextTd, td.getTdAddress());			// set td next pointer
+						if(dataToggleBulkIn){
+							td.setDataToggle(false);
+							dataToggleBulkIn = false;
+						}
+						else{
+							td.setDataToggle(true);
+							dataToggleBulkIn = true;
+						}
+						if(verbose_dbg){
+							System.out.println("IN: next for new td: ");
+							System.out.println(US.GET4(nextTd));
+						}
+						td.setNextTD(US.GET4(nextTd));					// set old end td pointer as next td for new enqueued td
+						if(verbose_dbg){
+							System.out.println(nextTd);
+						}
+						US.PUT4(nextTd, td.getTdAddress());				// set td next pointer
 					}
 				}
 				break;
 			case ISOCHRONOUS:
-				break;
+				throw new UsbException("ISOCHRONOUS not supported!");
+				//break;
 			case INTERRUPT:
-				break;
+				throw new UsbException("INTERRUPT not supported!");
+				//break;
 			default:
 				break;
 		}
@@ -656,7 +649,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		}
 		bulkEndpointOutDesc.setTdTailPointer(emptyBulkOutTD.getTdAddress());
 		bulkEndpointOutDesc.setTdHeadPointer(emptyBulkOutTD.getTdAddress());
-		bulkEndpointOutDesc.setNextEndpointDescriptor(bulkEndpointOutDesc.getEndpointDescriptorAddress());	//TODO
+		bulkEndpointOutDesc.setNextEndpointDescriptor(bulkEndpointInDesc.getEndpointDescriptorAddress());
 		bulkEndpointInDesc.setTdTailPointer(emptyBulkInTD.getTdAddress());
 		bulkEndpointInDesc.setTdHeadPointer(emptyBulkInTD.getTdAddress());
 		bulkEndpointInDesc.setNextEndpointDescriptor(bulkEndpointOutDesc.getEndpointDescriptorAddress());
@@ -672,8 +665,6 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			US.PUT4(0xf0000530, 0x00000000);
 			System.out.println("already 1");
 		}
-//		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | 0x00000200) ); 	// #!activate Interrupt routing of HC (with activated: 0x0300)(ignored by 5200), 
-																	// and RemoteWakeupConnected -> when commented out not active -> only needed by hid-devices
 
 		// read and set frame interval
 		val = (US.GET4(USBHCFIR) & 0x3FFF);
@@ -711,12 +702,12 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		int saveFmInterval = US.GET4(USBHCFIR);
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR)| OHCI_HCR) );	//issue a software reset
 		currentTime = Kernel.time();
-		while( Kernel.time() - currentTime < 10);	//wait for 10us
+		while( Kernel.time() - currentTime < 10);				//wait for 10us
 		if ((US.GET4(USBHCCMDSR) & OHCI_HCR) != 0){
 			//reset failed
 			throw new UsbException("HC reset failed.");
 		}
-		US.PUT4(USBHCFIR, saveFmInterval);			//restore frame interval register
+		US.PUT4(USBHCFIR, saveFmInterval);						//restore frame interval register
 		
 		//check USB State -> should be USBSuspend
 		if( (US.GET4(USBHCCTRLR) & OHCI_CTRL_HCFS ) != OHCI_USB_SUSPEND){
@@ -740,13 +731,13 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			System.out.println("Addr Done: ");
 			System.out.println(US.REF(doneList));
 		}
-		US.PUT4(USBHCDHR, (US.REF(doneList) + 8));		// memory for done head
+		US.PUT4(USBHCDHR, (US.REF(doneList) + 8));			// memory for done head
 				
 		periodicReInit();
 		
 		if( (US.GET4(USBHCFIR) & 0x7fff0000) == 0){
 			throw new UsbException("init error: Frame Interval Register is 0.");
-			//probably jump to software reset to try again
+			//TODO think about: probably jump to software reset to try again
 		}
 		
 		//start controller operations
@@ -773,7 +764,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		delay = ((US.GET4(USBHCRHDRA) & 0xFF000000) >> 23) * 1000;	// wait -> POTPGT * 2 (in 2ms unit) delay after powering hub
 		while(Kernel.time() - currentTime < delay);					// give USB device 100ms time to set up
 		
-		if( (US.GET4(USBHCRHP1SR) & RH_PS_CCS) != 0){ 		// device connected
+		if( (US.GET4(USBHCRHP1SR) & RH_PS_CCS) != 0){ 				// device connected
 			// reset signaling on port
 			resetRootHub();
 			

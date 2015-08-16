@@ -16,7 +16,7 @@ public class OhciDevice extends Task{
 	private static boolean done = false;
 	
 	private static UsbRequest setConfig;
-	private static UsbRequest setInterface;
+	private static UsbRequest setInterface;	//TODO test it with another device than AVR and can handle SET_INTERFACE standard request
 	
 	public void action(){
 		if(init){

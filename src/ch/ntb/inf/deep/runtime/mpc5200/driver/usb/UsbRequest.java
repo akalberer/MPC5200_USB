@@ -2,7 +2,13 @@ package ch.ntb.inf.deep.runtime.mpc5200.driver.usb;
 
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.exceptions.UsbException;
 import ch.ntb.inf.deep.runtime.mpc5200.driver.usb.EndpointType;
-import ch.ntb.inf.deep.unsafe.US;
+
+/**
+ * used to create an USB-Request, sets up the user data for standard requests and creates the needed TransferDescriptors
+ * 
+ * @author Andreas Kalberer
+ *
+ */
 
 public class UsbRequest {
 
@@ -10,6 +16,10 @@ public class UsbRequest {
 	TransferDescriptor dataTd;
 	TransferDescriptor statusTd;
 	
+	/**
+	 * user data for get device descriptor standard-request, used during enumeration,
+	 * read only the first 8 bytes with maximum packet size 8 byte (every USB device must support that)
+	 */
 	private static byte[] setupGetDevDescEnum = new byte[]{
 		(byte) 0x80,		// bRequestType: get descriptor
 		(byte) 0x06,		// bRequest
@@ -21,6 +31,9 @@ public class UsbRequest {
 		(byte) 0x00			// high byte
 	};
 	
+	/**
+	 * user data for complete get device descriptor standard-request
+	 */
 	private static byte[] setupGetDevDesc = new byte[]{
 		(byte) 0x80,		// bRequestType: get descriptor
 		(byte) 0x06,		// bRequest
@@ -32,7 +45,10 @@ public class UsbRequest {
 		(byte) 0x00			// high byte
 	};
 	
-	private static byte[] setupSetAddress = new byte[]{
+	/**
+	 * user data for SET_ADDRESS standard-request
+	 */
+	private byte[] setupSetAddress = new byte[]{
 		(byte) 0x00,		// bRequestType: SET_ADDRESS
 		(byte) 0x05,		// bRequest
 		(byte) 0x00,		// new device Address low byte
@@ -43,7 +59,10 @@ public class UsbRequest {
 		(byte) 0x00
 	};
 	
-	private static byte[] setupSetConfiguration = new byte[]{
+	/**
+	 * user data for SET_CONFIGURATION standard-request
+	 */
+	private byte[] setupSetConfiguration = new byte[]{
 		(byte) 0x00,		// bRequestType
 		(byte) 0x09,		// bRequest
 		(byte) 0x00,		// ID of desired config
@@ -54,7 +73,10 @@ public class UsbRequest {
 		(byte) 0x00
 	};
 	
-	private static byte[] setupSetInterface = new byte[]{
+	/**
+	 * user data for SET_INTERFACE standard-request
+	 */
+	private byte[] setupSetInterface = new byte[]{
 		(byte) 0x01,		// bRequestType
 		(byte) 0x0B,		// bRequest
 		(byte) 0x00,		// ID of alternate setting
@@ -69,6 +91,11 @@ public class UsbRequest {
 		
 	}
 	
+	/**
+	 * get device descriptor standard-request
+	 * @param data	device descriptor data returned by request
+	 * @throws UsbException on failure
+	 */
 	public void getDeviceDescriptor(byte[] data) throws UsbException{
 		if(data.length < 18){
 			throw new UsbException("UsbRequest: byte array too short.");
@@ -84,6 +111,11 @@ public class UsbRequest {
 		OhciHcd.resumeControlEndpoint();
 	}
 	
+	/**
+	 * get device descriptor standard-request used during enumeration (endpoint has maximum packet size of 8 bytes)
+	 * @param data	device descriptor data returned by request
+	 * @throws UsbException on failure
+	 */
 	public void getDeviceDescriptorEnumeration(byte[] data) throws UsbException{
 		if(data.length < 8){
 			throw new UsbException("UsbRequest: byte array too short.");
@@ -99,6 +131,11 @@ public class UsbRequest {
 		OhciHcd.resumeControlEndpoint();
 	}
 	
+	/**
+	 * set device address standard-request
+	 * @param address	desired device address
+	 * @throws UsbException on failure
+	 */
 	public void setAddress(int address) throws UsbException{
 		if(address > 127 || address <= 0){
 			throw new UsbException("UsbRequest: address not valid.");
@@ -114,6 +151,11 @@ public class UsbRequest {
 		OhciHcd.resumeControlEndpoint();
 	}
 	
+	/**
+	 * set configuration standard-request
+	 * @param configValue	desired configuration value to set on the device
+	 * @throws UsbException on failure
+	 */
 	public void setConfiguration(int configValue) throws UsbException{
 		if(configValue > 255 || configValue < 0 ){
 			throw new UsbException("UsbRequest: invalid config value.");
@@ -129,6 +171,12 @@ public class UsbRequest {
 		OhciHcd.resumeControlEndpoint();
 	}
 	
+	/**
+	 * set interface standard-request
+	 * @param ifaceNum		desired interface number
+	 * @param altSetting	alternate setting id
+	 * @throws UsbException	on failure
+	 */
 	public void setInterface(int ifaceNum, int altSetting) throws UsbException{
 		if(ifaceNum > 255 || ifaceNum < 0 || altSetting > 255 || altSetting < -1){
 			throw new UsbException("UsbRequest: invalid paramter");
@@ -148,6 +196,14 @@ public class UsbRequest {
 		OhciHcd.resumeControlEndpoint();
 	}
 	
+	/**
+	 * bulk transfer request
+	 * @param endpoint		desired endpoint to communicate with the device
+	 * @param dir			transfer direction (see {@link TransferDirection})
+	 * @param data			user data to send on OUT-, or read buffer on IN-transfer
+	 * @param dataLength	data length or buffer size
+	 * @throws UsbException	on failure
+	 */
 	public void bulkTransfer(int endpoint, TransferDirection dir, byte[] data, int dataLength) throws UsbException{
 		if(dir == TransferDirection.IN){
 			OhciHcd.skipBulkEndpointIn();
@@ -167,6 +223,11 @@ public class UsbRequest {
 		}
 	}
 	
+	/**
+	 * check if control transfer is finished
+	 * @return true: if done, false: else
+	 * @throws UsbException on failure
+	 */
 	public boolean controlDone() throws UsbException{
 		if(statusTd.done()){
 			return true;
