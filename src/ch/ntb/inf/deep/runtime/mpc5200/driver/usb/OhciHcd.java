@@ -347,6 +347,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	 */
 	public static void skipBulkEndpointIn(){
 		bulkEndpointInDesc.setSkipBit();
+		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR)& ~(OHCI_CTRL_CLE)));	// deactivate control list processing
 	}
 	
 	/**
