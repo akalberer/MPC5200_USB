@@ -56,6 +56,7 @@ public class OhciDevice extends Task{
 		setInterface = new UsbRequest();
 		
 		setConfig.setConfiguration(cfgValue);
+		while(!setConfig.controlDone());
 		//TODO AVR USB does not support it, so leave it out at the moment
 //		setInterface.setInterface(ifaceNum, altSetting);
 	}
