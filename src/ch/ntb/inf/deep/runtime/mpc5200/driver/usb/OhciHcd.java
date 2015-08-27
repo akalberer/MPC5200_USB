@@ -606,7 +606,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 	public static void init() throws UsbException{
 		state = OhciState.OHCI_RH_HALTED;
 		
-		//init CDM Fractional Divider Config Register (internal USB Clock 48 MHz)
+		// 1) init CDM Fractional Divider Config Register (internal USB Clock 48 MHz)
 		int val = US.GET4(CDMFDCR);
 		if( (US.GET4(CDMPORCR) & 0x40) == 0x40 ){		// assumes 33Mhz clock
 			val |= 0x00010001;							// checkout 5200lite.c
@@ -616,19 +616,19 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		}
 		US.PUT4(CDMFDCR,  val);		// config ext_48mhz_en, fraction divider enable, divider counter
 		
-		//init GPS port config register for USB support
+		// 2) init GPS port config register for USB support
 		val = US.GET4(GPSPCR);
 		val &= ~0x00800000;			// internal 48MHz USB Clock, pin is GPIO
 		val &= ~0x00007000;			// USB Differential mode
 		val |= 0x00001000;			// USB 1
 		US.PUT4(GPSPCR, val);
 		
-		if( (US.GET4(USBHCREVR)& 0xFF) != 0x10 ){		// 1) check HC revision (compliant to USB 1.1)
+		if( (US.GET4(USBHCREVR)& 0xFF) != 0x10 ){		// 3) check HC revision (compliant to USB 1.1)
 			//wrong HC revision
 			throw new UsbException("Wrong HC revision");
 		}
 		
-		//init structures
+		// 4) init structures
 		hcca = new byte[HCCA_SIZE];
 		controlEndpointDesc = new OhciEndpointDescriptor(EndpointType.CONTROL, 8);
 		bulkEndpointOutDesc = new OhciEndpointDescriptor(EndpointType.BULK_OUT, 64);
@@ -638,8 +638,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		emptyBulkInTD = new TransferDescriptor(TdType.EMPTY);
 		doneList = new int[512];
 		
-		//init first endpoints for testing !?
-		// 2) allocate and init any Host Controller structures, including HCCA block
+		// allocate and init any Host Controller structures, including HCCA block
 		controlEndpointDesc.setMaxPacketSize(8);		// max 8 Bytes first, Control Format -> F=0, speed full, direction from TD, endpoint 0, function address 0
 		controlEndpointDesc.setTdTailPointer(emptyControlTD.getTdAddress());		// TD Queue Tail pointer
 		controlEndpointDesc.setTdHeadPointer(emptyControlTD.getTdAddress());		// TD Queue Head pointer
@@ -655,10 +654,10 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		bulkEndpointInDesc.setTdHeadPointer(emptyBulkInTD.getTdAddress());
 		bulkEndpointInDesc.setNextEndpointDescriptor(bulkEndpointOutDesc.getEndpointDescriptorAddress());
 		
-		// 3) load driver, take control of host controller
+		// 5) load driver, take control of host controller
 		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR) | OHCI_OCR) ); // set OwnershipChangeRequest
 		
-		// -> routed to interrupt controller in SIU -> route from there to SMI, NORMAL interrupt
+		// 6) -> routed to interrupt controller in SIU -> route from there to SMI, NORMAL interrupt
 		InterruptMpc5200io ohciInt = new OhciHcd();
 		InterruptMpc5200io.install(ohciInt, 6); 				// USB is peripheral number 6
 		US.PUT4(ICTLPIMR, US.GET4(ICTLPIMR) & ~0x02000000);		// accept interrupts from USB
@@ -667,13 +666,14 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			System.out.println("already 1");
 		}
 
-		// read and set frame interval
+		// 7) read and set frame interval
 		val = (US.GET4(USBHCFIR) & 0x3FFF);
 		val = FI;
-		val |= (FSMPS << 16);						// set interval to 12000-1, set FSMP
+		val |= (FSMPS << 16);									// set interval to 12000-1, set FSMP
 		US.PUT4(USBHCFIR, (val|FI) );	
-		US.PUT4(USBHCPSR, (int)(FI*9/10));			// config periodic start (0.9*FrameInterval)
+		US.PUT4(USBHCPSR, (int)(FI*9/10));						// config periodic start (0.9*FrameInterval)
 		
+		// 8) wait depending on current functional state
 		long delay;
 		switch(US.GET4(USBHCCTRLR) & OHCI_CTRL_HCFS){
 			case OHCI_USB_OPER:
@@ -700,17 +700,19 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			hcca[i] = 0;
 		}
 		
+		// 9) save frame interval register
 		int saveFmInterval = US.GET4(USBHCFIR);
-		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR)| OHCI_HCR) );	//issue a software reset
+		// 10) issue a software reset
+		US.PUT4(USBHCCMDSR, (US.GET4(USBHCCMDSR)| OHCI_HCR) );	
 		currentTime = Kernel.time();
-		while( Kernel.time() - currentTime < 10);				//wait for 10us
+		while( Kernel.time() - currentTime < 10);				// 11) wait for 10us
 		if ((US.GET4(USBHCCMDSR) & OHCI_HCR) != 0){
 			//reset failed
 			throw new UsbException("HC reset failed.");
 		}
-		US.PUT4(USBHCFIR, saveFmInterval);						//restore frame interval register
+		US.PUT4(USBHCFIR, saveFmInterval);						// 12) restore frame interval register
 		
-		//check USB State -> should be USBSuspend
+		// 13) check USB State -> should be USBSuspend
 		if( (US.GET4(USBHCCTRLR) & OHCI_CTRL_HCFS ) != OHCI_USB_SUSPEND){
 			System.out.println("not in suspend");
 			throw new UsbException(Integer.toHexString((US.GET4(USBHCCTRLR) & 0x000000C0 )));
@@ -719,10 +721,10 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		
 		// now we're in the SUSPEND state ... must go OPERATIONAL within 2msec else HC enters RESUME
 
-		US.PUT4(USBHCCHEDR, controlEndpointDesc.getEndpointDescriptorAddress());				//set ED for control transfer
-		US.PUT4(USBHCBHEDR, bulkEndpointOutDesc.getEndpointDescriptorAddress());				//set ED for bulk transfer
+		US.PUT4(USBHCCHEDR, controlEndpointDesc.getEndpointDescriptorAddress());		// 14) set ED for control transfer
+		US.PUT4(USBHCBHEDR, bulkEndpointOutDesc.getEndpointDescriptorAddress());		//	   set ED for bulk transfer
 		
-		// 4) Set up HC registers and HC Communications Area
+		// 15) Set up HC registers and HC Communications Area
 		if(verbose_dbg){
 			System.out.println("Addr HCCA: ");
 			System.out.println(US.REF(hcca));
@@ -733,7 +735,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			System.out.println(US.REF(doneList));
 		}
 		US.PUT4(USBHCDHR, (US.REF(doneList) + 8));			// memory for done head
-				
+		
+		// 16) set frame interval
 		periodicReInit();
 		
 		if( (US.GET4(USBHCFIR) & 0x7fff0000) == 0){
@@ -741,7 +744,7 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 			//TODO think about: probably jump to software reset to try again
 		}
 		
-		//start controller operations
+		// 17) start controller operations
 		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) & OHCI_CTRL_RWC));
 		US.PUT4(USBHCCTRLR, (US.GET4(USBHCCTRLR) | OHCI_CONTROL_INIT | OHCI_USB_OPER));		
 		state = OhciState.OHCI_RH_RUNNING;
@@ -749,20 +752,22 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 		// wake on ConnectStatusChange, matching external hubs
 		US.PUT4(USBHCRHSR, (US.GET4(USBHCRHSR) | RH_HS_DRWE ));
 		
-		// choose the interrupts we care about now, others later on demand
+		// 18) choose the interrupts we care about now, others later on demand
 		US.PUT4(USBHCISR, 0xFFFFFFFF);				// clear interrupt status register
 		US.PUT4(USBHCIER, OHCI_INTR_INIT);			// enable desired interrupts
 		
+		// 19) configure root hub
 		val = US.GET4(USBHCRHDRA);
 		val &= ~(RH_A_PSM | RH_A_OCPM | RH_A_NPS);	// Power switching supported, all ports powered at the same time
 		val |= (RH_A_NOCP | RH_A_NDP);				// config PowerSwitchingMode, OverCurrentProtection, NofDownstreamPorts
 		val |= 0x32000000;							// 100ms PowerOnToPowerGoodTime
 		US.PUT4(USBHCRHDRA, val ); 	
-		US.PUT4(USBHCRHDRB, 0x00000000);							// power switching global, devices removable
-//		US.PUT4(USBHCRHSR, 0x00000001);								// turn off power
-		US.PUT4(USBHCRHSR, (US.GET4(USBHCRHSR) | RH_HS_LPSC)); 		//enable power on all ports
+		US.PUT4(USBHCRHDRB, 0x00000000);			// power switching global, devices removable
+		// 20) enable power on all ports
+		US.PUT4(USBHCRHSR, (US.GET4(USBHCRHSR) | RH_HS_LPSC)); 		
 
-		delay = ((US.GET4(USBHCRHDRA) & 0xFF000000) >> 23) * 1000;	// wait -> POTPGT * 2 (in 2ms unit) delay after powering hub
+		// 21) wait -> POTPGT * 2 (in 2ms unit) delay after powering hub
+		delay = ((US.GET4(USBHCRHDRA) & 0xFF000000) >> 23) * 1000;	
 		while(Kernel.time() - currentTime < delay);					// give USB device 100ms time to set up
 		
 		if( (US.GET4(USBHCRHP1SR) & RH_PS_CCS) != 0){ 				// device connected
@@ -778,8 +783,8 @@ public class OhciHcd extends InterruptMpc5200io implements IphyCoreMpc5200io{
 
 	static{
 						
-		US.PUT4(GPWER, US.GET4(GPWER) | 0x80000000);	// enable GPIO use
-		US.PUT4(GPWDDR, US.GET4(GPWDDR) | 0x80000000);	// make output
+		US.PUT4(GPWER, US.GET4(GPWER) | 0x80000000);		// enable GPIO use
+		US.PUT4(GPWDDR, US.GET4(GPWDDR) | 0x80000000);		// make output
 		US.PUT4(GPWOUT, US.GET4(GPWOUT) | 0x80000000);
 	}
 	
